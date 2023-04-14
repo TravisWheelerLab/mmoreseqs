@@ -89,15 +89,26 @@ enum SubCommands {
         query: String,
         /// Target fasta file
         target: String,
+        /// Where to place output files
+        #[arg(short, long, default_value = "./prep/")]
+        output_dir: String,
         #[command(flatten)]
         common: CommonArgs,
     },
     #[command(about = SEED_ABOUT, long_about = SEED_LONG_ABOUT)]
     Seed {
         /// Query MMseqs2 profile database
-        query: String,
+        query_db: String,
+        /// Query P7 profile HMM
+        query_hmm: String,
         /// Target MMseqs 2 sequence database
         target: String,
+        /// Where to place the seeds output
+        #[arg(short, long, default_value = "seeds.tsv")]
+        output_file: String,
+        /// Where to place intermediate files
+        #[arg(short, long, default_value = "./tmp/")]
+        work_dir: String,
         #[command(flatten)]
         common: CommonArgs,
     },
@@ -118,6 +129,9 @@ enum SubCommands {
         query: String,
         /// Target fasta file
         target: String,
+        /// Where to place intermediate files
+        #[arg(long, default_value = "./tmp/")]
+        work_dir: String,
         #[command(flatten)]
         common: CommonArgs,
     },
@@ -130,25 +144,47 @@ impl Cli {
             SubCommands::Prep {
                 query,
                 target,
+                output_dir,
                 common,
             } => {
-                args.command = Command::Prep;
                 args.set_common(&common);
+                args.command = Command::Prep;
                 args.paths.query_msa = PathBuf::from(query);
                 args.paths.target_fasta = PathBuf::from(target);
+
+                let output_dir = PathBuf::from(output_dir);
+
+                create_dir_all(&output_dir).expect("failed to create output directory");
+                args.paths.query_msa_db = output_dir.join("msaDB");
+                args.paths.query_db = output_dir.join("queryDB");
+                args.paths.target_db = output_dir.join("targetDB");
+                args.paths.query_hmm = output_dir.join("query.hmm");
             }
             SubCommands::Seed {
-                query,
+                query_db,
+                query_hmm,
                 target,
+                output_file,
+                work_dir,
                 common,
             } => {
-                args.command = Command::Seed;
                 args.set_common(&common);
-                args.paths.query_db = PathBuf::from(&query);
-                args.paths.query_db_index = PathBuf::from(format!("{}.index", query));
-                args.paths.query_db_h = PathBuf::from(format!("{}_h", query));
-                args.paths.query_db_h_index = PathBuf::from(format!("{}_h.index", query));
+                args.command = Command::Seed;
+
+                args.paths.query_db = PathBuf::from(&query_db);
+                args.paths.query_db_index = PathBuf::from(format!("{}.index", query_db));
+                args.paths.query_db_h = PathBuf::from(format!("{}_h", query_db));
+                args.paths.query_db_h_index = PathBuf::from(format!("{}_h.index", query_db));
+                args.paths.query_hmm = PathBuf::from(query_hmm);
                 args.paths.target_db = PathBuf::from(target);
+
+                let work_dir = PathBuf::from(work_dir);
+                create_dir_all(&work_dir).expect("failed to create working directory");
+
+                args.paths.prefilter_db = work_dir.join("prefilterDB");
+                args.paths.align_db = work_dir.join("alignDB");
+
+                args.paths.seeds = PathBuf::from(output_file);
             }
             SubCommands::Align {
                 query,
@@ -156,8 +192,8 @@ impl Cli {
                 seeds,
                 common,
             } => {
-                args.command = Command::Align;
                 args.set_common(&common);
+                args.command = Command::Align;
                 args.paths.query_hmm = PathBuf::from(query);
                 args.paths.target_fasta = PathBuf::from(target);
                 args.paths.seeds = PathBuf::from(seeds);
@@ -165,24 +201,42 @@ impl Cli {
             SubCommands::Search {
                 query,
                 target,
+                work_dir,
                 common,
             } => {
-                args.command = Command::Search;
                 args.set_common(&common);
+
+                args.command = Command::Search;
                 args.paths.query_msa = PathBuf::from(query);
                 args.paths.target_fasta = PathBuf::from(target);
+
+                let work_dir = PathBuf::from(work_dir);
+
+                create_dir_all(&work_dir).expect("failed to create working directory");
+
+                args.paths.query_msa_db = work_dir.join("msaDB");
+                args.paths.query_db = work_dir.join("queryDB");
+                args.paths.query_db_index = work_dir.join("queryDB.index");
+                args.paths.query_db_h = work_dir.join("queryDB_h");
+                args.paths.query_db_h_index = work_dir.join("queryDB_h.index");
+                args.paths.target_db = work_dir.join("targetDB");
+                args.paths.prefilter_db = work_dir.join("prefilterDB");
+                args.paths.align_db = work_dir.join("alignDB");
+                args.paths.seeds = work_dir.join("seeds.tsv");
+                args.paths.query_hmm = work_dir.join("query.hmm");
+
+                args.paths.results = PathBuf::from("results.tsv");
             }
         }
         args
     }
 }
 
+#[derive(Default)]
 pub struct FilePaths {
-    pub root: PathBuf,
-    // prep
+    pub query_hmm: PathBuf,
     pub query_msa: PathBuf,
     pub target_fasta: PathBuf,
-    // seed
     pub query_msa_db: PathBuf,
     pub query_db: PathBuf,
     pub query_db_index: PathBuf,
@@ -191,30 +245,8 @@ pub struct FilePaths {
     pub target_db: PathBuf,
     pub prefilter_db: PathBuf,
     pub align_db: PathBuf,
-    // align
-    pub query_hmm: PathBuf,
     pub seeds: PathBuf,
-}
-
-impl Default for FilePaths {
-    fn default() -> Self {
-        let root_path = env::current_dir().unwrap().join("tmp");
-        Self {
-            root: env::current_dir().unwrap().join("tmp"),
-            query_msa: Default::default(),
-            target_fasta: Default::default(),
-            query_msa_db: root_path.join("msaDB"),
-            query_db: root_path.join("queryDB"),
-            query_db_index: root_path.join("queryDB.index"),
-            query_db_h: root_path.join("queryDB_h"),
-            query_db_h_index: root_path.join("queryDB_h.index"),
-            target_db: root_path.join("targetDB"),
-            prefilter_db: root_path.join("prefilterDB"),
-            align_db: root_path.join("alignDB"),
-            seeds: root_path.join("seeds.tsv"),
-            query_hmm: root_path.join("query.hmm"),
-        }
-    }
+    pub results: PathBuf,
 }
 
 #[derive(Default)]
@@ -244,8 +276,6 @@ impl Args {
 
 fn main() -> Result<()> {
     let args = Cli::parse().args();
-
-    create_dir_all(&args.paths.root)?;
 
     match args.command {
         Command::Prep => {
