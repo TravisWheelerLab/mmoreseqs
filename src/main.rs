@@ -5,13 +5,14 @@ mod pipeline;
 use crate::pipeline::{align, prep, search, seed};
 use anyhow::Result;
 use clap::{ArgAction, Parser, Subcommand};
-use std::env;
 use std::fs::create_dir_all;
 use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
 #[command(name = "mmoreseqs")]
-#[command(about = "Some stuff should go here", long_about = None)]
+#[command(
+    about = "Using MMseqs2 to find rough alignment seeds, perform bounded profile HMM sequence alignment"
+)]
 pub struct Cli {
     #[command(subcommand)]
     command: SubCommands,
@@ -23,51 +24,6 @@ pub struct Cli {
     #[arg(long, action = ArgAction::SetTrue)]
     allow_overwrite: Option<bool>,
 }
-
-const PREP_ABOUT: &str = "\
-Prepare a query (MSA) file and target (fasta) file\
-";
-
-const PREP_LONG_ABOUT: &str = "\
-------------------
-| mmoreseqs prep |
-------------------
-
-This command is useful for caching the first step in the mmoreseqs pipeline.
-
-For the query:  produce both a P7 profile HMM and an MMseqs2 profile database.
-For the target: produce an MMseqs2 sequence database.\
-";
-
-const SEED_ABOUT: &str = "\
-\
-";
-
-const SEED_LONG_ABOUT: &str = "\
-------------------
-| mmoreseqs seed |
-------------------
-";
-
-const ALIGN_ABOUT: &str = "\
-\
-";
-
-const ALIGN_LONG_ABOUT: &str = "\
--------------------
-| mmoreseqs align |
--------------------
-";
-
-const SEARCH_ABOUT: &str = "\
-\
-";
-
-const SEARCH_LONG_ABOUT: &str = "\
---------------------
-| mmoreseqs search |
---------------------
-";
 
 #[derive(Debug, Parser)]
 struct CommonArgs {
@@ -83,7 +39,7 @@ struct CommonArgs {
 /// Doc comment
 #[derive(Debug, Subcommand)]
 enum SubCommands {
-    #[command(about = PREP_ABOUT, long_about = PREP_LONG_ABOUT)]
+    #[command(about = "Prepare a query (MSA) file and target (fasta) file for the seed step")]
     Prep {
         /// Query MSA file
         query: String,
@@ -95,7 +51,7 @@ enum SubCommands {
         #[command(flatten)]
         common: CommonArgs,
     },
-    #[command(about = SEED_ABOUT, long_about = SEED_LONG_ABOUT)]
+    #[command(about = "Use MMseqs2 to create a set of alignment seeds for the align step")]
     Seed {
         /// Query MMseqs2 profile database
         query_db: String,
@@ -112,7 +68,9 @@ enum SubCommands {
         #[command(flatten)]
         common: CommonArgs,
     },
-    #[command(about = ALIGN_ABOUT, long_about = ALIGN_LONG_ABOUT)]
+    #[command(
+        about = "Search with the query (HMM) against the target (fasta), using alignment seeds"
+    )]
     Align {
         /// Query P7 HMM file
         query: String,
@@ -123,7 +81,7 @@ enum SubCommands {
         #[command(flatten)]
         common: CommonArgs,
     },
-    #[command(about = SEARCH_ABOUT, long_about = SEARCH_LONG_ABOUT)]
+    #[command(about = "Search a query (MSA) file and target (fasta) file")]
     Search {
         /// Query MSA file
         query: String,
@@ -291,7 +249,7 @@ fn main() -> Result<()> {
             search(&args)?;
         }
         Command::CommandNotSet => {
-            panic!("somehow failed to set the command")
+            unreachable!()
         }
     }
 
