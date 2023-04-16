@@ -141,6 +141,7 @@ pub fn align(args: &Args) -> Result<()> {
     }
 
     let targets = Sequence::amino_from_fasta(&args.paths.target_fasta)?;
+    let target_count = targets.len();
     let mut target_map: HashMap<String, Sequence> = HashMap::new();
     for target in targets {
         target_map.insert(target.name.clone(), target);
@@ -233,9 +234,14 @@ pub fn align(args: &Args) -> Result<()> {
                 row_bounds.target_end,
             );
 
-            alignments.push(Alignment::new(&trace, profile, target));
+            alignments.push(Alignment::new(&trace, profile, target, target_count));
         }
     }
+
+    alignments = alignments
+        .drain(..)
+        .filter(|a| a.evalue <= args.evalue_cutoff)
+        .collect();
 
     write_tabular_output(&alignments, &mut args.paths.results.open(true)?)?;
 

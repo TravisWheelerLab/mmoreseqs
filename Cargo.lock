@@ -322,9 +322,9 @@ dependencies = [
 
 [[package]]
 name = "nale"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd5bf4ba8ddb30712400ed196ec81fcdde8017578e94851f5625d795285b00f7"
+checksum = "18126b51168341c74d6c14f511f49524e9a4e5837c62e0536cf3b4323a983f77"
 dependencies = [
  "anyhow",
  "lazy_static",

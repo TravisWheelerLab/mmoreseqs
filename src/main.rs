@@ -5,7 +5,7 @@ mod pipeline;
 use crate::external_steps::{check_hmmer_installed, check_mmseqs_installed};
 use crate::pipeline::{align, prep, search, seed};
 use anyhow::Result;
-use clap::{ArgAction, Parser, Subcommand};
+use clap::{Parser, Subcommand};
 use std::fs::create_dir_all;
 use std::path::PathBuf;
 
@@ -69,6 +69,9 @@ enum SubCommands {
         target: String,
         /// Seed file (result of mmoreseqs seed)
         seeds: String,
+        /// Only report hits with an E-value above this value
+        #[arg(short = 'E', default_value_t = 10.0)]
+        evalue_cutoff: f32,
         #[command(flatten)]
         common: CommonArgs,
     },
@@ -78,7 +81,10 @@ enum SubCommands {
         query: String,
         /// Target fasta file
         target: String,
-        /// Where to place the seeds output
+        /// Only report hits with an E-value above this value
+        #[arg(short = 'E', default_value_t = 10.0)]
+        evalue_cutoff: f32,
+        /// Where to place the results
         #[arg(short, long, default_value = "results.tsv")]
         output_file: String,
         /// Where to place intermediate files
@@ -142,6 +148,7 @@ impl Cli {
                 query,
                 target,
                 seeds,
+                evalue_cutoff,
                 common,
             } => {
                 args.set_common(&common);
@@ -149,10 +156,12 @@ impl Cli {
                 args.paths.query_hmm = PathBuf::from(query);
                 args.paths.target_fasta = PathBuf::from(target);
                 args.paths.seeds = PathBuf::from(seeds);
+                args.evalue_cutoff = evalue_cutoff;
             }
             SubCommands::Search {
                 query,
                 target,
+                evalue_cutoff,
                 output_file,
                 work_dir,
                 common,
@@ -178,6 +187,7 @@ impl Cli {
                 args.paths.seeds = work_dir.join("seeds.tsv");
                 args.paths.query_hmm = work_dir.join("query.hmm");
 
+                args.evalue_cutoff = evalue_cutoff;
                 args.paths.results = PathBuf::from(output_file);
             }
         }
@@ -217,6 +227,7 @@ pub struct Args {
     pub command: Command,
     pub paths: FilePaths,
     pub threads: usize,
+    pub evalue_cutoff: f32,
 }
 
 impl Args {
