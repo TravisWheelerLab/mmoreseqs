@@ -2,6 +2,7 @@ mod command_ext;
 mod external_steps;
 mod pipeline;
 
+use crate::external_steps::{check_hmmer_installed, check_mmseqs_installed};
 use crate::pipeline::{align, prep, search, seed};
 use anyhow::Result;
 use clap::{ArgAction, Parser, Subcommand};
@@ -16,13 +17,6 @@ use std::path::PathBuf;
 pub struct Cli {
     #[command(subcommand)]
     command: SubCommands,
-    /// Path for alignment output
-    /// The number of threads to use
-    #[arg(long, default_value_t = 1usize)]
-    threads: usize,
-    /// Allow output files to be overwritten
-    #[arg(long, action = ArgAction::SetTrue)]
-    allow_overwrite: Option<bool>,
 }
 
 #[derive(Debug, Parser)]
@@ -31,9 +25,6 @@ struct CommonArgs {
     /// The number of threads to use
     #[arg(long, default_value_t = 1usize)]
     threads: usize,
-    /// Allow output files to be overwritten
-    #[arg(long, action = ArgAction::SetTrue)]
-    allow_overwrite: Option<bool>,
 }
 
 /// Doc comment
@@ -87,6 +78,9 @@ enum SubCommands {
         query: String,
         /// Target fasta file
         target: String,
+        /// Where to place the seeds output
+        #[arg(short, long, default_value = "results.tsv")]
+        output_file: String,
         /// Where to place intermediate files
         #[arg(long, default_value = "./tmp/")]
         work_dir: String,
@@ -159,6 +153,7 @@ impl Cli {
             SubCommands::Search {
                 query,
                 target,
+                output_file,
                 work_dir,
                 common,
             } => {
@@ -183,7 +178,7 @@ impl Cli {
                 args.paths.seeds = work_dir.join("seeds.tsv");
                 args.paths.query_hmm = work_dir.join("query.hmm");
 
-                args.paths.results = PathBuf::from("results.tsv");
+                args.paths.results = PathBuf::from(output_file);
             }
         }
         args
@@ -222,18 +217,19 @@ pub struct Args {
     pub command: Command,
     pub paths: FilePaths,
     pub threads: usize,
-    pub allow_overwrite: bool,
 }
 
 impl Args {
     fn set_common(&mut self, args: &CommonArgs) {
         self.threads = args.threads;
-        self.allow_overwrite = args.allow_overwrite.unwrap_or(false);
     }
 }
 
 fn main() -> Result<()> {
     let args = Cli::parse().args();
+
+    check_hmmer_installed()?;
+    check_mmseqs_installed()?;
 
     match args.command {
         Command::Prep => {

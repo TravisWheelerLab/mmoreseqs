@@ -10,7 +10,7 @@ use crate::external_steps::{
 use crate::Args;
 
 use nale::align::bounded::structs::{
-    CloudBoundGroup, CloudMatrixLinear, CloudSearchParams, RowBounds,
+    CloudBoundGroup, CloudMatrixLinear, CloudSearchParams, RowBounds, Seed,
 };
 use nale::align::bounded::{
     backward_bounded, cloud_search_backward, cloud_search_forward, forward_bounded,
@@ -19,7 +19,6 @@ use nale::align::bounded::{
 use nale::align::needleman_wunsch::{needleman_wunsch, SimpleTraceStep};
 use nale::output::output_tabular::write_tabular_output;
 use nale::output::path_buf_ext::PathBufExt;
-use nale::pipelines::Seed;
 use nale::structs::hmm::parse_hmms_from_p7hmm_file;
 use nale::structs::{Alignment, DpMatrixFlat, Profile, Sequence, Trace};
 
@@ -238,15 +237,16 @@ pub fn align(args: &Args) -> Result<()> {
         }
     }
 
-    write_tabular_output(
-        &alignments,
-        &mut args.paths.results.open(args.allow_overwrite)?,
-    )?;
+    write_tabular_output(&alignments, &mut args.paths.results.open(true)?)?;
 
     Ok(())
 }
 
 pub fn search(args: &Args) -> Result<()> {
+    {
+        // quickly make sure we can write the results
+        args.paths.results.open(true)?;
+    }
     prep(args)?;
     seed(args)?;
     align(args)?;

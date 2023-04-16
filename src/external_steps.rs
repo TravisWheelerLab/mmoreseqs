@@ -12,6 +12,20 @@ use thiserror::Error;
 #[error("no profile to profile map")]
 pub struct ProfilesNotMappedError;
 
+pub fn check_hmmer_installed() -> Result<()> {
+    Command::new("hmmbuild")
+        .arg("-h")
+        .run()
+        .context("hmmbuild does not appear to be in the system path")
+}
+
+pub fn check_mmseqs_installed() -> Result<()> {
+    Command::new("mmseqs")
+        .arg("-h")
+        .run()
+        .context("mmseqs2 does not appear to be in the system path")
+}
+
 pub fn run_hmmbuild(args: &Args) -> Result<()> {
     Command::new("hmmbuild")
         .args(["--cpu", &args.threads.to_string()])

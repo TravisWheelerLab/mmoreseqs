@@ -14,7 +14,7 @@ pub trait CommandExt {
 
 impl CommandExt for Command {
     fn run(&mut self) -> Result<()> {
-        let output = self.output().context("failed to start command")?;
+        let output = self.output().context("failed to run command")?;
 
         match output.status.success() {
             true => Ok(()),
