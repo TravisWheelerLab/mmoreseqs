@@ -317,14 +317,14 @@ dependencies = [
  "anyhow",
  "clap",
  "nale",
+ "serde",
+ "serde_json",
  "thiserror",
 ]
 
 [[package]]
 name = "nale"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18126b51168341c74d6c14f511f49524e9a4e5837c62e0536cf3b4323a983f77"
 dependencies = [
  "anyhow",
  "lazy_static",
