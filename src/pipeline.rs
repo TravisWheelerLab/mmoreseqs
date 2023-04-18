@@ -10,7 +10,7 @@ use crate::external_steps::{
 use crate::Args;
 
 use nale::align::bounded::structs::{
-    CloudBoundGroup, CloudMatrixLinear, CloudSearchParams, RowBounds, Seed,
+    CloudBoundGroup, CloudMatrixLinear, CloudSearchParams, DpMatrixSparse, RowBounds, Seed,
 };
 use nale::align::bounded::{
     backward_bounded, cloud_search_backward, cloud_search_forward, forward_bounded,
@@ -20,7 +20,7 @@ use nale::align::needleman_wunsch::{needleman_wunsch, SimpleTraceStep};
 use nale::output::output_tabular::write_tabular_output;
 use nale::output::path_buf_ext::PathBufExt;
 use nale::structs::hmm::parse_hmms_from_p7hmm_file;
-use nale::structs::{Alignment, DpMatrixFlat, Profile, Sequence, Trace};
+use nale::structs::{Alignment, Profile, Sequence, Trace};
 
 use anyhow::Result;
 
@@ -160,10 +160,14 @@ pub fn align(args: &Args) -> Result<()> {
     let mut forward_bounds = CloudBoundGroup::new(max_target_length, max_profile_length);
     let mut backward_bounds = CloudBoundGroup::new(max_target_length, max_profile_length);
 
-    let mut forward_matrix = DpMatrixFlat::new(max_target_length, max_profile_length);
-    let mut backward_matrix = DpMatrixFlat::new(max_target_length, max_profile_length);
-    let mut posterior_matrix = DpMatrixFlat::new(max_target_length, max_profile_length);
-    let mut optimal_matrix = DpMatrixFlat::new(max_target_length, max_profile_length);
+    let mut forward_matrix =
+        DpMatrixSparse::new(max_target_length, max_profile_length, &RowBounds::default());
+    let mut backward_matrix =
+        DpMatrixSparse::new(max_target_length, max_profile_length, &RowBounds::default());
+    let mut posterior_matrix =
+        DpMatrixSparse::new(max_target_length, max_profile_length, &RowBounds::default());
+    let mut optimal_matrix =
+        DpMatrixSparse::new(max_target_length, max_profile_length, &RowBounds::default());
 
     let mut alignments: Vec<Alignment> = vec![];
 
@@ -175,7 +179,6 @@ pub fn align(args: &Args) -> Result<()> {
         let seeds = profile_seeds_by_accession.get(profile_accession).unwrap();
         for seed in seeds {
             let target = target_map.get(&seed.target_name[..]).unwrap();
-
             profile.configure_for_target_length(target.length);
 
             cloud_matrix.reuse(profile.length);
@@ -206,10 +209,10 @@ pub fn align(args: &Args) -> Result<()> {
 
             let row_bounds = RowBounds::new(&forward_bounds);
 
-            forward_matrix.reuse(target.length, profile.length);
-            backward_matrix.reuse(target.length, profile.length);
-            posterior_matrix.reuse(target.length, profile.length);
-            optimal_matrix.reuse(target.length, profile.length);
+            forward_matrix.reuse(target.length, profile.length, &row_bounds);
+            backward_matrix.reuse(target.length, profile.length, &row_bounds);
+            posterior_matrix.reuse(target.length, profile.length, &row_bounds);
+            optimal_matrix.reuse(target.length, profile.length, &row_bounds);
 
             forward_bounded(profile, target, &mut forward_matrix, &row_bounds);
 
