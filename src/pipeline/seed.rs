@@ -15,7 +15,9 @@ use nale::structs::{Profile, Sequence};
 use anyhow::Context;
 use thiserror::Error;
 
-pub fn seed(args: &Args) -> anyhow::Result<(Vec<Profile>, HashMap<String, Vec<Seed>>)> {
+pub type SeedMap = HashMap<String, Vec<Seed>>;
+
+pub fn seed(args: &Args) -> anyhow::Result<(Vec<Profile>, SeedMap)> {
     Command::new("mmseqs")
         .arg("prefilter")
         .arg(&args.mmseqs_query_db())
@@ -67,9 +69,12 @@ pub fn seed(args: &Args) -> anyhow::Result<(Vec<Profile>, HashMap<String, Vec<Se
     let profile_to_profile_idx_maps_by_accession =
         map_p7_to_mmseqs_profiles(&p7_profiles, args).context("failed to map profiles")?;
 
-    let profile_seeds_by_accession =
-        build_alignment_seeds(&profile_to_profile_idx_maps_by_accession, args)
-            .context("failed to build alignment seeds")?;
+    let profile_seeds_by_accession = build_alignment_seeds(
+        &profile_to_profile_idx_maps_by_accession,
+        &p7_profiles,
+        args,
+    )
+    .context("failed to build alignment seeds")?;
 
     let mut seeds_out = args
         .paths
@@ -93,7 +98,7 @@ pub fn map_p7_to_mmseqs_profiles(
 ) -> anyhow::Result<HashMap<String, Vec<usize>>> {
     let mmseqs_consensus_map = extract_mmseqs_profile_consensus_sequences(args)?;
 
-    let mut profile_to_profile_idx_maps_by_accession: HashMap<String, Vec<usize>> = HashMap::new();
+    let mut mmseqs_to_p7_idx_by_accession: HashMap<String, Vec<usize>> = HashMap::new();
 
     for p7_profile in p7_profiles {
         let accession = &p7_profile.accession;
@@ -126,10 +131,10 @@ pub fn map_p7_to_mmseqs_profiles(
         debug_assert_eq!(mmseqs_idx, mmseqs_consensus.length);
         debug_assert_eq!(p7_idx, p7_consensus.length);
 
-        profile_to_profile_idx_maps_by_accession.insert(accession.clone(), mmseqs_to_p7);
+        mmseqs_to_p7_idx_by_accession.insert(accession.clone(), mmseqs_to_p7);
     }
 
-    Ok(profile_to_profile_idx_maps_by_accession)
+    Ok(mmseqs_to_p7_idx_by_accession)
 }
 
 pub fn extract_mmseqs_profile_consensus_sequences(
@@ -233,14 +238,29 @@ pub fn extract_mmseqs_profile_consensus_sequences(
 }
 
 #[derive(Error, Debug)]
-#[error("no profile to profile map")]
-pub struct ProfilesNotMappedError;
+#[error("no profile to profile map for: {profile_name}")]
+pub struct ProfilesNotMappedError {
+    profile_name: String,
+}
+
+#[derive(Error, Debug)]
+#[error("no profile name for accession: {accession}")]
+pub struct AccessionNotMappedError {
+    accession: String,
+}
 
 pub fn build_alignment_seeds(
     profile_to_profile_idx_maps_by_accession: &HashMap<String, Vec<usize>>,
+    profiles: &Vec<Profile>,
     args: &Args,
-) -> anyhow::Result<HashMap<String, Vec<Seed>>> {
-    let mut profile_seeds_by_accession: HashMap<String, Vec<Seed>> = HashMap::new();
+) -> anyhow::Result<SeedMap> {
+    let mut accession_to_name: HashMap<&str, &str> = HashMap::new();
+
+    for profile in profiles {
+        accession_to_name.insert(&profile.accession, &profile.name);
+    }
+
+    let mut seed_map: SeedMap = HashMap::new();
 
     let mmseqs_align_file = File::open(&args.mmseqs_align_tsv()).context(format!(
         "couldn't open mmseqs align file at: {}",
@@ -252,17 +272,24 @@ pub fn build_alignment_seeds(
         let line_tokens: Vec<&str> = line.split_whitespace().collect();
         let accession = line_tokens[0];
 
-        let seeds = match profile_seeds_by_accession.get_mut(accession) {
+        let profile_name = (*accession_to_name
+            .get(accession)
+            .ok_or(AccessionNotMappedError {
+                accession: accession.to_string(),
+            })?)
+        .to_string();
+
+        let seeds = match seed_map.get_mut(&profile_name) {
             Some(seeds) => seeds,
             None => {
-                profile_seeds_by_accession.insert(accession.to_string(), vec![]);
-                profile_seeds_by_accession.get_mut(accession).unwrap()
+                seed_map.insert(profile_name.clone(), vec![]);
+                seed_map.get_mut(&profile_name).unwrap()
             }
         };
 
         let profile_idx_map = profile_to_profile_idx_maps_by_accession
             .get(accession)
-            .ok_or(ProfilesNotMappedError)?;
+            .ok_or(ProfilesNotMappedError { profile_name })?;
 
         let target_name = line_tokens[1].to_string();
         let target_start = line_tokens[4].parse::<usize>()?;
@@ -278,5 +305,5 @@ pub fn build_alignment_seeds(
             profile_end: profile_idx_map[profile_end],
         })
     }
-    Ok(profile_seeds_by_accession)
+    Ok(seed_map)
 }

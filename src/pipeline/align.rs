@@ -1,7 +1,11 @@
 use crate::extension_traits::PathBufExt;
+use crate::pipeline::seed::SeedMap;
 use crate::Args;
 
+use anyhow::Context;
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::Read;
 
 use nale::align::bounded::structs::{
     CloudBoundGroup, CloudMatrixLinear, CloudSearchParams, DpMatrixSparse, RowBounds, Seed,
@@ -17,12 +21,12 @@ use nale::structs::{Alignment, Profile, Sequence, Trace};
 pub fn align(
     args: &Args,
     profiles: Option<Vec<Profile>>,
-    seed_map: Option<HashMap<String, Vec<Seed>>>,
+    seed_map: Option<SeedMap>,
 ) -> anyhow::Result<()> {
     let profiles = match profiles {
-        // if we happened to run the seed step before this, the profiles will be passed in
+        // if we happened to run the seed step before
+        // this, the profiles will be passed in
         Some(profiles) => profiles,
-        // otherwise we'll load them from disk
         None => {
             let hmms = parse_hmms_from_p7hmm_file(args.paths.query.to_str().unwrap())?;
             hmms.iter().map(Profile::new).collect()
@@ -30,19 +34,31 @@ pub fn align(
     };
 
     let seed_map = match seed_map {
+        // if we happened to run the seed step before
+        // this, the seeds will be passed in
         Some(seed_map) => seed_map,
         None => {
-            // TODO: make a typedef for the seedmap
-            //       deserialize seeds.json
-            //       map accessions back to names
-            //       support tsv
-            panic!("no seeds");
+            let mut seeds_string = String::new();
+            File::open(&args.paths.seeds)
+                .context(format!(
+                    "failed to open alignment seeds file: {}",
+                    &args.paths.seeds.to_string_lossy(),
+                ))?
+                .read_to_string(&mut seeds_string)
+                .context(format!(
+                    "failed to read alignment seeds file: {}",
+                    &args.paths.seeds.to_string_lossy(),
+                ))?;
+            serde_json::from_str(&seeds_string).context(format!(
+                "failed to parse alignment seeds file: {}",
+                &args.paths.seeds.to_string_lossy(),
+            ))?
         }
     };
 
     let mut profile_map: HashMap<String, Profile> = HashMap::new();
     for profile in profiles {
-        profile_map.insert(profile.accession.clone(), profile);
+        profile_map.insert(profile.name.clone(), profile);
     }
 
     let targets = Sequence::amino_from_fasta(&args.paths.target)?;

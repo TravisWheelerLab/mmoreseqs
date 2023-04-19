@@ -9,6 +9,6 @@ pub fn search(args: &Args) -> anyhow::Result<()> {
     }
     prep(args)?;
     let (profiles, seed_map) = seed::seed(args)?;
-    // align(args, Some(profiles))?;
+    align(args, Some(profiles), Some(seed_map))?;
     Ok(())
 }

@@ -68,6 +68,9 @@ enum SubCommands {
         /// Only report hits with an E-value above this value
         #[arg(short = 'E', default_value_t = 10.0)]
         evalue_cutoff: f32,
+        /// Where to place the results
+        #[arg(short, long, default_value = "results.tsv")]
+        output_file: String,
         #[command(flatten)]
         common: CommonArgs,
     },
@@ -129,6 +132,7 @@ impl Cli {
                 target,
                 seeds,
                 evalue_cutoff,
+                output_file,
                 common,
             } => {
                 args.set_common(&common);
@@ -138,6 +142,7 @@ impl Cli {
                 args.paths.target = PathBuf::from(target);
                 args.paths.seeds = PathBuf::from(seeds);
                 args.evalue_cutoff = evalue_cutoff;
+                args.paths.results = PathBuf::from(output_file);
             }
             SubCommands::Search {
                 query,
