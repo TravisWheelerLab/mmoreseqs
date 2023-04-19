@@ -1,6 +1,6 @@
 use crate::extension_traits::PathBufExt;
 use crate::pipeline::{align, prep, seed};
-use crate::Args;
+use crate::args::Args;
 
 pub fn search(args: &Args) -> anyhow::Result<()> {
     {

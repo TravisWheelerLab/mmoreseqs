@@ -1,8 +1,8 @@
 use crate::extension_traits::CommandExt;
-use crate::{Args, FileFormat};
 use anyhow::{Context, Result};
 use nale::structs::Sequence;
 use std::process::Command;
+use crate::args::{Args, FileFormat};
 
 pub fn prep(args: &Args) -> anyhow::Result<()> {
     match args.query_format {

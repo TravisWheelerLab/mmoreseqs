@@ -1,6 +1,4 @@
 use crate::extension_traits::{CommandExt, PathBufExt};
-use crate::{Args, FileFormat};
-
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
@@ -14,6 +12,7 @@ use nale::structs::{Profile, Sequence};
 
 use anyhow::Context;
 use thiserror::Error;
+use crate::args::{Args, FileFormat};
 
 pub type SeedMap = HashMap<String, Vec<Seed>>;
 

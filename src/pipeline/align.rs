@@ -1,7 +1,5 @@
 use crate::extension_traits::PathBufExt;
 use crate::pipeline::seed::SeedMap;
-use crate::{Args, FileFormat};
-
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
@@ -20,6 +18,7 @@ use nale::structs::{Alignment, Profile, Sequence, Trace};
 use crate::pipeline::prep::{build_hmm_from_fasta, build_hmm_from_stockholm};
 use anyhow::Context;
 use thiserror::Error;
+use crate::args::{Args, FileFormat};
 
 #[derive(Error, Debug)]
 #[error("no profile with name: {profile_name}")]
