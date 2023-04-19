@@ -6,7 +6,7 @@ use crate::pipeline::{align, prep, search, seed};
 
 use std::fs::{create_dir_all, File};
 use std::io::{BufRead, BufReader};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};

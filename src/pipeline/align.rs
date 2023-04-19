@@ -8,7 +8,7 @@ use std::fs::File;
 use std::io::Read;
 
 use nale::align::bounded::structs::{
-    CloudBoundGroup, CloudMatrixLinear, CloudSearchParams, DpMatrixSparse, RowBounds, Seed,
+    CloudBoundGroup, CloudMatrixLinear, CloudSearchParams, DpMatrixSparse, RowBounds,
 };
 use nale::align::bounded::{
     backward_bounded, cloud_search_backward, cloud_search_forward, forward_bounded,
