@@ -1,5 +1,5 @@
 use crate::extension_traits::{CommandExt, PathBufExt};
-use crate::Args;
+use crate::{Args, FileFormat};
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -66,15 +66,8 @@ pub fn seed(args: &Args) -> anyhow::Result<(Vec<Profile>, SeedMap)> {
     let hmms = parse_hmms_from_p7hmm_file(args.query_hmm().to_str().unwrap())?;
     let p7_profiles: Vec<Profile> = hmms.iter().map(Profile::new).collect();
 
-    let profile_to_profile_idx_maps_by_accession =
-        map_p7_to_mmseqs_profiles(&p7_profiles, args).context("failed to map profiles")?;
-
-    let profile_seeds_by_accession = build_alignment_seeds(
-        &profile_to_profile_idx_maps_by_accession,
-        &p7_profiles,
-        args,
-    )
-    .context("failed to build alignment seeds")?;
+    let profile_seeds_by_accession =
+        build_alignment_seeds(&p7_profiles, args).context("failed to build alignment seeds")?;
 
     let mut seeds_out = args
         .paths
@@ -249,14 +242,10 @@ pub struct AccessionNotMappedError {
     accession: String,
 }
 
-pub fn build_alignment_seeds(
-    profile_to_profile_idx_maps_by_accession: &HashMap<String, Vec<usize>>,
-    profiles: &Vec<Profile>,
-    args: &Args,
-) -> anyhow::Result<SeedMap> {
+pub fn build_alignment_seeds(p7_profiles: &Vec<Profile>, args: &Args) -> anyhow::Result<SeedMap> {
     let mut accession_to_name: HashMap<&str, &str> = HashMap::new();
 
-    for profile in profiles {
+    for profile in p7_profiles {
         accession_to_name.insert(&profile.accession, &profile.name);
     }
 
@@ -266,18 +255,59 @@ pub fn build_alignment_seeds(
         "couldn't open mmseqs align file at: {}",
         &args.mmseqs_align_tsv().to_string_lossy()
     ))?;
+
     let align_reader = BufReader::new(mmseqs_align_file);
+
+    let profile_to_profile_idx_maps_by_accession = match args.query_format {
+        // if the query was a fasta, we don't need to map between
+        // profiles (because we don't actually have profiles)
+        FileFormat::Fasta => None,
+        // if the query was a stockholm, then it was used to build
+        // both a P7 HMM and an MMseqs2 profile, which consistently
+        // have significant differences in consensus columns
+        FileFormat::Stockholm => {
+            Some(map_p7_to_mmseqs_profiles(p7_profiles, args).context("failed to map profiles")?)
+        }
+        _ => {
+            panic!()
+        }
+    };
 
     for line in align_reader.lines().flatten() {
         let line_tokens: Vec<&str> = line.split_whitespace().collect();
-        let accession = line_tokens[0];
+        let target_name = line_tokens[1].to_string();
+        let target_start = line_tokens[4].parse::<usize>()?;
+        let target_end = line_tokens[5].parse::<usize>()?;
+        let mut profile_start = line_tokens[2].parse::<usize>()?;
+        let mut profile_end = line_tokens[3].parse::<usize>()?;
 
-        let profile_name = (*accession_to_name
-            .get(accession)
-            .ok_or(AccessionNotMappedError {
-                accession: accession.to_string(),
-            })?)
-        .to_string();
+        let profile_name = match args.query_format {
+            FileFormat::Fasta => line_tokens[0].to_string(),
+            FileFormat::Stockholm => {
+                let accession = line_tokens[0];
+
+                let profile_name =
+                    (*accession_to_name
+                        .get(accession)
+                        .ok_or(AccessionNotMappedError {
+                            accession: accession.to_string(),
+                        })?)
+                    .to_string();
+
+                if let Some(ref map) = profile_to_profile_idx_maps_by_accession {
+                    let profile_idx_map = map.get(accession).ok_or(ProfilesNotMappedError {
+                        profile_name: profile_name.clone(),
+                    })?;
+                    // if the profile index map happens to map the start to 0, we want to push it to 1
+                    profile_start = profile_idx_map[profile_start].max(1);
+                    profile_end = profile_idx_map[profile_end];
+                }
+                profile_name
+            }
+            _ => {
+                panic!()
+            }
+        };
 
         let seeds = match seed_map.get_mut(&profile_name) {
             Some(seeds) => seeds,
@@ -287,22 +317,12 @@ pub fn build_alignment_seeds(
             }
         };
 
-        let profile_idx_map = profile_to_profile_idx_maps_by_accession
-            .get(accession)
-            .ok_or(ProfilesNotMappedError { profile_name })?;
-
-        let target_name = line_tokens[1].to_string();
-        let target_start = line_tokens[4].parse::<usize>()?;
-        let target_end = line_tokens[5].parse::<usize>()?;
-        let profile_start = line_tokens[2].parse::<usize>()?;
-        let profile_end = line_tokens[3].parse::<usize>()?;
-
         seeds.push(Seed {
             target_name,
             target_start,
             target_end,
-            profile_start: profile_idx_map[profile_start].max(1),
-            profile_end: profile_idx_map[profile_end],
+            profile_start,
+            profile_end,
         })
     }
     Ok(seed_map)

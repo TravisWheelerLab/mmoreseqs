@@ -1,5 +1,7 @@
 use crate::extension_traits::CommandExt;
 use crate::{Args, FileFormat};
+use anyhow::Context;
+use nale::structs::Sequence;
 use std::process::Command;
 
 pub fn prep(args: &Args) -> anyhow::Result<()> {
@@ -8,7 +10,25 @@ pub fn prep(args: &Args) -> anyhow::Result<()> {
             Command::new("mmseqs")
                 .arg("createdb")
                 .arg(&args.paths.query)
-                .arg(&args.mmseqs_query_db())
+                .arg(args.mmseqs_query_db())
+                .run()?;
+
+            let query_seq = Sequence::amino_from_fasta(&args.paths.query).with_context(|| {
+                format!(
+                    "failed to parse query fasta: {}",
+                    &args.paths.query.to_string_lossy()
+                )
+            })?;
+
+            if query_seq.len() != 1 {
+                panic!("multiple fasta queries are not supported at this time");
+            }
+
+            Command::new("hmmbuild")
+                .args(["--cpu", &args.threads.to_string()])
+                .args(["-n", &query_seq[0].name])
+                .arg(args.query_hmm())
+                .arg(&args.paths.query)
                 .run()?;
         }
         FileFormat::Stockholm => {
@@ -17,18 +37,24 @@ pub fn prep(args: &Args) -> anyhow::Result<()> {
             Command::new("mmseqs")
                 .arg("convertmsa")
                 .arg(&args.paths.query)
-                .arg(&msa_db_path)
+                .arg(msa_db_path)
                 .run()?;
 
             Command::new("mmseqs")
                 .arg("msa2profile")
-                .arg(&msa_db_path)
-                .arg(&args.mmseqs_query_db())
+                .arg(msa_db_path)
+                .arg(args.mmseqs_query_db())
                 .args(["--threads", &args.threads.to_string()])
                 // --match-mode INT       0: Columns that have a residue in the first sequence are kept,
                 //                        1: columns that have a residue in --match-ratio of all sequences
                 //                           are kept [0]
                 .args(["--match-mode", "1"])
+                .run()?;
+
+            Command::new("hmmbuild")
+                .args(["--cpu", &args.threads.to_string()])
+                .arg(&args.query_hmm())
+                .arg(&args.paths.query)
                 .run()?;
         }
         _ => {
@@ -36,18 +62,10 @@ pub fn prep(args: &Args) -> anyhow::Result<()> {
         }
     }
 
-    // create the mmseqs2 target sequence database
     Command::new("mmseqs")
         .arg("createdb")
         .arg(&args.paths.target)
         .arg(&args.mmseqs_target_db())
-        .run()?;
-
-    // create a P7 HMM from the query
-    Command::new("hmmbuild")
-        .args(["--cpu", &args.threads.to_string()])
-        .arg(&args.query_hmm())
-        .arg(&args.paths.query)
         .run()?;
 
     Ok(())

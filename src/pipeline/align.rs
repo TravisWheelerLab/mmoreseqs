@@ -2,7 +2,6 @@ use crate::extension_traits::PathBufExt;
 use crate::pipeline::seed::SeedMap;
 use crate::Args;
 
-use anyhow::Context;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
@@ -18,6 +17,26 @@ use nale::output::output_tabular::write_tabular_output;
 use nale::structs::hmm::parse_hmms_from_p7hmm_file;
 use nale::structs::{Alignment, Profile, Sequence, Trace};
 
+use anyhow::Context;
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+#[error("no profile with name: {profile_name}")]
+pub struct ProfileNotFoundError {
+    profile_name: String,
+}
+
+#[derive(Error, Debug)]
+#[error("no seeds for profile: {profile_name}")]
+pub struct SeedsNotFoundError {
+    profile_name: String,
+}
+
+#[derive(Error, Debug)]
+#[error("no target with name: {target_name}")]
+pub struct TargetNotFoundError {
+    target_name: String,
+}
 pub fn align(
     args: &Args,
     profiles: Option<Vec<Profile>>,
@@ -95,11 +114,27 @@ pub fn align(
     let mut profile_names: Vec<&String> = seed_map.keys().collect();
     profile_names.sort();
 
-    for profile_accession in profile_names {
-        let profile = profile_map.get_mut(profile_accession).unwrap();
-        let seeds = seed_map.get(profile_accession).unwrap();
+    for profile_name in profile_names {
+        let profile = profile_map
+            .get_mut(profile_name)
+            .ok_or_else(|| ProfileNotFoundError {
+                profile_name: profile_name.clone(),
+            })?;
+
+        let seeds = seed_map
+            .get(profile_name)
+            .ok_or_else(|| SeedsNotFoundError {
+                profile_name: profile_name.clone(),
+            })?;
+
         for seed in seeds {
-            let target = target_map.get(&seed.target_name[..]).unwrap();
+            let target =
+                target_map
+                    .get(&seed.target_name[..])
+                    .ok_or_else(|| TargetNotFoundError {
+                        target_name: seed.target_name.clone(),
+                    })?;
+
             profile.configure_for_target_length(target.length);
 
             cloud_matrix.reuse(profile.length);
