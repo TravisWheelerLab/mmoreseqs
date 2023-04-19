@@ -1,6 +1,6 @@
 use crate::extension_traits::CommandExt;
 use crate::{Args, FileFormat};
-use anyhow::Context;
+use anyhow::{Context, Result};
 use nale::structs::Sequence;
 use std::process::Command;
 
@@ -13,23 +13,7 @@ pub fn prep(args: &Args) -> anyhow::Result<()> {
                 .arg(args.mmseqs_query_db())
                 .run()?;
 
-            let query_seq = Sequence::amino_from_fasta(&args.paths.query).with_context(|| {
-                format!(
-                    "failed to parse query fasta: {}",
-                    &args.paths.query.to_string_lossy()
-                )
-            })?;
-
-            if query_seq.len() != 1 {
-                panic!("multiple fasta queries are not supported at this time");
-            }
-
-            Command::new("hmmbuild")
-                .args(["--cpu", &args.threads.to_string()])
-                .args(["-n", &query_seq[0].name])
-                .arg(args.query_hmm())
-                .arg(&args.paths.query)
-                .run()?;
+            build_hmm_from_fasta(args)?;
         }
         FileFormat::Stockholm => {
             // the msa db is only used here, so it doesn't have an associated method on Args
@@ -51,11 +35,7 @@ pub fn prep(args: &Args) -> anyhow::Result<()> {
                 .args(["--match-mode", "1"])
                 .run()?;
 
-            Command::new("hmmbuild")
-                .args(["--cpu", &args.threads.to_string()])
-                .arg(&args.query_hmm())
-                .arg(&args.paths.query)
-                .run()?;
+            build_hmm_from_stockholm(args)?;
         }
         _ => {
             panic!()
@@ -68,5 +48,37 @@ pub fn prep(args: &Args) -> anyhow::Result<()> {
         .arg(&args.mmseqs_target_db())
         .run()?;
 
+    Ok(())
+}
+
+pub fn build_hmm_from_stockholm(args: &Args) -> Result<()> {
+    Command::new("hmmbuild")
+        .args(["--cpu", &args.threads.to_string()])
+        .arg(&args.query_hmm())
+        .arg(&args.paths.query)
+        .run()?;
+    
+    Ok(())
+}
+
+pub fn build_hmm_from_fasta(args: &Args) -> Result<()> {
+    let query_seq = Sequence::amino_from_fasta(&args.paths.query).with_context(|| {
+        format!(
+            "failed to parse query fasta: {}",
+            &args.paths.query.to_string_lossy()
+        )
+    })?;
+
+    if query_seq.len() != 1 {
+        panic!("multiple fasta queries are not supported at this time");
+    }
+
+    Command::new("hmmbuild")
+        .args(["--cpu", &args.threads.to_string()])
+        .args(["-n", &query_seq[0].name])
+        .arg(args.query_hmm())
+        .arg(&args.paths.query)
+        .run()?;
+    
     Ok(())
 }

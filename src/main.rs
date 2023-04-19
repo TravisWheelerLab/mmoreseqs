@@ -5,7 +5,7 @@ use crate::extension_traits::CommandExt;
 use crate::pipeline::{align, prep, search, seed};
 
 use std::fs::{create_dir_all, File};
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read};
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
@@ -171,7 +171,10 @@ impl Cli {
         }
         match args.command {
             Command::Prep | Command::Align | Command::Search => args.guess_query_format()?,
-            _ => {}
+            Command::Seed => args.get_query_format_from_mmseqs_file()?,
+            Command::NotSet => {
+                panic!("command not set")
+            }
         }
         Ok(args)
     }
@@ -196,7 +199,7 @@ pub enum Command {
     Align,
     Search,
     #[default]
-    CommandNotSet,
+    NotSet,
 }
 
 #[derive(Default)]
@@ -230,6 +233,45 @@ impl Args {
                 "couldn't guess the format of query file: {}",
                 &self.paths.query.to_string_lossy()
             ));
+        };
+        Ok(())
+    }
+
+    fn get_query_format_from_mmseqs_file(&mut self) -> Result<()> {
+        let mut file = File::open(self.paths.prep_dir.join("queryDB.dbtype"))?;
+        let mut dbtype_buf: Vec<u8> = vec![];
+        file.read_to_end(&mut dbtype_buf)?;
+        //  from mmseqs2: commons/parameters.h
+        //      DBTYPE_AMINO_ACIDS = 0;
+        //      DBTYPE_NUCLEOTIDES = 1;
+        //      DBTYPE_HMM_PROFILE = 2;
+        //      //DBTYPE_PROFILE_STATE_SEQ = 3;
+        //      //DBTYPE_PROFILE_STATE_PROFILE = 4;
+        //      DBTYPE_ALIGNMENT_RES = 5;
+        //      DBTYPE_CLUSTER_RES = 6;
+        //      DBTYPE_PREFILTER_RES = 7;
+        //      DBTYPE_TAXONOMICAL_RESULT = 8;
+        //      DBTYPE_INDEX_DB = 9;
+        //      DBTYPE_CA3M_DB = 10;
+        //      DBTYPE_MSA_DB = 11;
+        //      DBTYPE_GENERIC_DB = 12;
+        //      DBTYPE_OMIT_FILE = 13;
+        //      DBTYPE_PREFILTER_REV_RES = 14;
+        //      DBTYPE_OFFSETDB = 15;
+        //      DBTYPE_DIRECTORY = 16; // needed for verification
+        //      DBTYPE_FLATFILE = 17; // needed for verification
+        //      DBTYPE_SEQTAXDB = 18; // needed for verification
+        //      DBTYPE_STDIN = 19; // needed for verification
+        //      DBTYPE_URI = 20; // needed for verification
+        self.query_format = match dbtype_buf[0] {
+            0u8 => FileFormat::Fasta,
+            2u8 => FileFormat::Stockholm,
+            _ => {
+                return Err(UnsupportedMmseqsDbError {
+                    code: dbtype_buf[0],
+                }
+                .into())
+            }
         };
         Ok(())
     }
@@ -299,6 +341,12 @@ pub enum FileFormat {
 #[error("can't guess file format")]
 pub struct UnrecognizedFileFormatError;
 
+#[derive(Error, Debug)]
+#[error("unsupported MMseqs2 database type: {code}")]
+pub struct UnsupportedMmseqsDbError {
+    code: u8,
+}
+
 fn check_hmmer_installed() -> Result<()> {
     std::process::Command::new("hmmbuild")
         .arg("-h")
@@ -332,7 +380,7 @@ fn main() -> Result<()> {
         Command::Search => {
             search(&args)?;
         }
-        Command::CommandNotSet => {
+        Command::NotSet => {
             unreachable!()
         }
     }

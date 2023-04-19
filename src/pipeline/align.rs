@@ -1,6 +1,6 @@
 use crate::extension_traits::PathBufExt;
 use crate::pipeline::seed::SeedMap;
-use crate::Args;
+use crate::{Args, FileFormat};
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -17,6 +17,7 @@ use nale::output::output_tabular::write_tabular_output;
 use nale::structs::hmm::parse_hmms_from_p7hmm_file;
 use nale::structs::{Alignment, Profile, Sequence, Trace};
 
+use crate::pipeline::prep::{build_hmm_from_fasta, build_hmm_from_stockholm};
 use anyhow::Context;
 use thiserror::Error;
 
@@ -47,7 +48,21 @@ pub fn align(
         // this, the profiles will be passed in
         Some(profiles) => profiles,
         None => {
-            let hmms = parse_hmms_from_p7hmm_file(args.paths.query.to_str().unwrap())?;
+            let hmms = match args.query_format {
+                FileFormat::Fasta => {
+                    build_hmm_from_fasta(args)?;
+                    parse_hmms_from_p7hmm_file(args.query_hmm().to_str().unwrap())?
+                }
+                FileFormat::Stockholm => {
+                    build_hmm_from_stockholm(args)?;
+                    parse_hmms_from_p7hmm_file(args.query_hmm().to_str().unwrap())?
+                }
+                FileFormat::Hmm => parse_hmms_from_p7hmm_file(args.paths.query.to_str().unwrap())?,
+                FileFormat::Unset => {
+                    panic!();
+                }
+            };
+
             hmms.iter().map(Profile::new).collect()
         }
     };
