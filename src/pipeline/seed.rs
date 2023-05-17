@@ -10,9 +10,9 @@ use nale::align::needleman_wunsch::{needleman_wunsch, SimpleTraceStep};
 use nale::structs::hmm::parse_hmms_from_p7hmm_file;
 use nale::structs::{Profile, Sequence};
 
+use crate::args::{Args, FileFormat};
 use anyhow::Context;
 use thiserror::Error;
-use crate::args::{Args, FileFormat};
 
 pub type SeedMap = HashMap<String, Vec<Seed>>;
 
@@ -43,7 +43,7 @@ pub fn seed(args: &Args) -> anyhow::Result<(Vec<Profile>, SeedMap)> {
         .arg(&args.mmseqs_align_db())
         .args(["--threads", &args.threads.to_string()])
         // -e DOUBLE      List matches below this E-value (range 0.0-inf) [1.000E-03]
-        .args(["-e", "1e-2"])
+        .args(["-e", "1000.0"])
         // --alt-ali INT  Show up to this many alternative alignments [0]
         .args(["--alt-ali", "0"])
         .args(["-a", "1"])

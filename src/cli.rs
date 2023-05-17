@@ -18,7 +18,7 @@ enum SubCommands {
         target: String,
         /// Only report hits with an E-value above this value
         #[arg(short = 'E', default_value_t = 10.0)]
-        evalue_cutoff: f32,
+        evalue_cutoff: f64,
         /// Where to place the results
         #[arg(short, default_value = "results.tsv")]
         output_file: String,
@@ -68,7 +68,7 @@ enum SubCommands {
         seeds: String,
         /// Only report hits with an E-value above this value
         #[arg(short = 'E', default_value_t = 10.0)]
-        evalue_cutoff: f32,
+        evalue_cutoff: f64,
         /// Where to place the results
         #[arg(short, long, default_value = "results.tsv")]
         output_file: String,

@@ -36,7 +36,7 @@ pub struct Args {
     pub paths: Paths,
     pub query_format: FileFormat,
     pub threads: usize,
-    pub evalue_cutoff: f32,
+    pub evalue_cutoff: f64,
 }
 
 impl Args {
