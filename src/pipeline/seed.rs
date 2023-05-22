@@ -25,7 +25,10 @@ pub fn seed(args: &Args) -> anyhow::Result<(Vec<Profile>, SeedMap)> {
         .args(["--threads", &args.threads.to_string()])
         .args(["-k", &args.mmseqs_args.k.to_string()])
         .args(["--k-score", &args.mmseqs_args.k_score.to_string()])
-        .args(["--min-ungapped-score", &args.mmseqs_args.min_ungapped_score.to_string()])
+        .args([
+            "--min-ungapped-score",
+            &args.mmseqs_args.min_ungapped_score.to_string(),
+        ])
         .args(["--max-seqs", &args.mmseqs_args.max_seqs.to_string()])
         .run()?;
 
@@ -37,6 +40,8 @@ pub fn seed(args: &Args) -> anyhow::Result<(Vec<Profile>, SeedMap)> {
         .arg(&args.mmseqs_align_db())
         .args(["--threads", &args.threads.to_string()])
         .args(["-e", &args.mmseqs_args.e.to_string()])
+        // this argument is required to get start positions for alignments
+        .args(["-a", "1"])
         .run()?;
 
     Command::new("mmseqs")

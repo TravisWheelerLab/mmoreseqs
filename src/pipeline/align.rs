@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{stdout, Read};
-use std::path::PathBuf;
 
 use crate::args::{Args, FileFormat};
 use crate::extension_traits::PathBufExt;
@@ -17,14 +16,12 @@ use nale::align::bounded::{
 };
 use nale::output::output_standard::write_standard_output;
 use nale::output::output_tabular::write_tabular_output;
-use nale::structs::dp_matrix::DpMatrix;
 use nale::structs::hmm::parse_hmms_from_p7hmm_file;
 use nale::structs::{Alignment, Profile, Sequence, Trace};
 
 use anyhow::Context;
 use nale::structs::alignment::ScoreParams;
 use rayon::prelude::*;
-use serde_json::json;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -389,7 +386,7 @@ pub fn align(
 //                     &CloudSearchParams::default(),
 //                     forward_bounds,
 //                 )
-//                     .unwrap();
+//                 .unwrap();
 //
 //                 cloud_search_backward(
 //                     profile,
@@ -399,7 +396,7 @@ pub fn align(
 //                     &CloudSearchParams::default(),
 //                     backward_bounds,
 //                 )
-//                     .unwrap();
+//                 .unwrap();
 //
 //                 CloudBoundGroup::join_bounds(forward_bounds, backward_bounds).unwrap();
 //
