@@ -37,7 +37,9 @@ pub fn prep(args: &Args) -> anyhow::Result<()> {
                 .args(["--match-mode", "1"])
                 .run()?;
 
-            build_hmm_from_stockholm(args)?;
+            if args.build_hmm {
+                build_hmm_from_stockholm(args)?;
+            }
         }
         _ => {
             panic!()

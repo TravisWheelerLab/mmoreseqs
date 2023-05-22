@@ -20,7 +20,7 @@ pub struct Paths {
 }
 
 #[derive(Default)]
-pub enum Command {
+pub enum MmoreCommand {
     Prep,
     Seed,
     Align,
@@ -51,7 +51,7 @@ pub struct MmseqsArgs {
 #[derive(Default)]
 /// The arguments that are passed throughout the pipeline
 pub struct Args {
-    pub command: Command,
+    pub command: MmoreCommand,
     pub paths: Paths,
     pub mmseqs_args: MmseqsArgs,
     pub query_format: FileFormat,

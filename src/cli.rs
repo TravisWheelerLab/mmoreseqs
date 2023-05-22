@@ -1,4 +1,4 @@
-use crate::args::{Args, Command};
+use crate::args::{Args, MmoreCommand};
 
 use std::fs::create_dir_all;
 use std::path::PathBuf;
@@ -70,6 +70,9 @@ enum SubCommands {
         /// Where to place the seeds output file
         #[arg(short, long, default_value = "seeds.json")]
         seeds: String,
+        /// The path to a pre-built P7HMM file
+        #[arg(long, value_name = "QUERY.hmm")]
+        query_hmm: Option<String>,
         /// The number of threads to use
         #[arg(short, long, default_value_t = 8usize, value_name = "n")]
         threads: usize,
@@ -134,7 +137,7 @@ impl Cli {
                 skip_hmmbuild,
             } => {
                 args.threads = threads;
-                args.command = Command::Prep;
+                args.command = MmoreCommand::Prep;
                 args.build_hmm = !skip_hmmbuild;
 
                 args.paths.query = PathBuf::from(query);
@@ -149,6 +152,7 @@ impl Cli {
             SubCommands::Seed {
                 prep_dir,
                 seeds,
+                query_hmm,
                 threads,
                 mmseqs_k,
                 mmseqs_k_score,
@@ -157,7 +161,7 @@ impl Cli {
                 mmseqs_e,
             } => {
                 args.threads = threads;
-                args.command = Command::Seed;
+                args.command = MmoreCommand::Seed;
                 args.mmseqs_args.k = mmseqs_k;
                 args.mmseqs_args.k_score = mmseqs_k_score;
                 args.mmseqs_args.min_ungapped_score = mmseqs_min_ungapped_score;
@@ -166,6 +170,10 @@ impl Cli {
 
                 args.paths.prep_dir = PathBuf::from(prep_dir);
                 args.paths.seeds = PathBuf::from(seeds);
+
+                if let Some(query_hmm) = query_hmm {
+                    args.paths.query = PathBuf::from(query_hmm);
+                }
             }
             SubCommands::Align {
                 query,
@@ -176,7 +184,7 @@ impl Cli {
                 threads,
             } => {
                 args.threads = threads;
-                args.command = Command::Align;
+                args.command = MmoreCommand::Align;
 
                 args.paths.query = PathBuf::from(query);
                 args.paths.target = PathBuf::from(target);
@@ -204,7 +212,7 @@ impl Cli {
                 args.mmseqs_args.max_seqs = mmseqs_max_seqs;
                 args.mmseqs_args.e = mmseqs_e;
 
-                args.command = Command::Search;
+                args.command = MmoreCommand::Search;
                 args.paths.query = PathBuf::from(query);
                 args.paths.target = PathBuf::from(target);
 
@@ -220,9 +228,11 @@ impl Cli {
             }
         }
         match args.command {
-            Command::Prep | Command::Align | Command::Search => args.guess_query_format()?,
-            Command::Seed => args.get_query_format_from_mmseqs_file()?,
-            Command::NotSet => {
+            MmoreCommand::Prep | MmoreCommand::Align | MmoreCommand::Search => {
+                args.guess_query_format()?
+            }
+            MmoreCommand::Seed => args.get_query_format_from_mmseqs_file()?,
+            MmoreCommand::NotSet => {
                 panic!("command not set")
             }
         }

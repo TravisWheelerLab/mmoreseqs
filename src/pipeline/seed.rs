@@ -57,7 +57,15 @@ pub fn seed(args: &Args) -> anyhow::Result<(Vec<Profile>, SeedMap)> {
         ])
         .run()?;
 
-    let hmms = parse_hmms_from_p7hmm_file(args.query_hmm().to_str().unwrap())?;
+    let hmms = if args.paths.query.exists() {
+        // TODO: fix this once the method signature is fixed
+        parse_hmms_from_p7hmm_file(args.paths.query.to_str().unwrap())?
+    } else {
+        // TODO: fix this once the method signature is fixed
+        parse_hmms_from_p7hmm_file(args.query_hmm().to_str().unwrap())?
+    };
+
+    // let hmms = parse_hmms_from_p7hmm_file(args.query_hmm().to_str().unwrap())?;
     let p7_profiles: Vec<Profile> = hmms.iter().map(Profile::new).collect();
 
     let profile_seeds_by_accession =

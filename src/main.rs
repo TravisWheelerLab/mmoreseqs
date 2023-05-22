@@ -3,7 +3,7 @@ mod cli;
 mod extension_traits;
 mod pipeline;
 
-use args::Command;
+use args::MmoreCommand;
 use cli::Cli;
 use extension_traits::CommandExt;
 use pipeline::{align, prep, search, seed};
@@ -32,19 +32,19 @@ fn main() -> Result<()> {
     check_mmseqs_installed()?;
 
     match args.command {
-        Command::Prep => {
+        MmoreCommand::Prep => {
             prep(&args)?;
         }
-        Command::Seed => {
+        MmoreCommand::Seed => {
             seed(&args)?;
         }
-        Command::Align => {
+        MmoreCommand::Align => {
             align(&args, None, None)?;
         }
-        Command::Search => {
+        MmoreCommand::Search => {
             search(&args)?;
         }
-        Command::NotSet => {
+        MmoreCommand::NotSet => {
             unreachable!()
         }
     }
