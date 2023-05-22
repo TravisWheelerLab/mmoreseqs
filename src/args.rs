@@ -30,13 +30,34 @@ pub enum Command {
 }
 
 #[derive(Default)]
+/// The arguments that are passed to MMseqs2
+pub struct MmseqsArgs {
+    // -k INT                    k-mer length (0: automatically set to optimum) [0]
+    pub k: usize,
+    // --k-score INT             k-mer threshold for generating similar k-mer lists [2147483647]
+    pub k_score: usize,
+    // --min-ungapped-score INT  Accept only matches with ungapped alignment score above
+    //                             threshold [15]
+    pub min_ungapped_score: usize,
+    // --max-seqs INT            Maximum results per query sequence allowed to pass the
+    //                             prefilter (affects sensitivity) [300]
+    pub max_seqs: usize,
+    // -e DOUBLE                 List matches below this E-value (range 0.0-inf) [1.000E-03]
+    pub e: f64,
+}
+
+// TODO: probably should split this into an
+//       Args struct for each pipeline step
+#[derive(Default)]
 /// The arguments that are passed throughout the pipeline
 pub struct Args {
     pub command: Command,
     pub paths: Paths,
+    pub mmseqs_args: MmseqsArgs,
     pub query_format: FileFormat,
     pub threads: usize,
     pub evalue_cutoff: f64,
+    pub build_hmm: bool,
 }
 
 impl Args {

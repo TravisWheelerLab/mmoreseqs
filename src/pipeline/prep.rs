@@ -1,8 +1,8 @@
+use crate::args::{Args, FileFormat};
 use crate::extension_traits::CommandExt;
 use anyhow::{Context, Result};
 use nale::structs::Sequence;
 use std::process::Command;
-use crate::args::{Args, FileFormat};
 
 pub fn prep(args: &Args) -> anyhow::Result<()> {
     match args.query_format {
@@ -13,7 +13,9 @@ pub fn prep(args: &Args) -> anyhow::Result<()> {
                 .arg(args.mmseqs_query_db())
                 .run()?;
 
-            build_hmm_from_fasta(args)?;
+            if args.build_hmm {
+                build_hmm_from_fasta(args)?;
+            }
         }
         FileFormat::Stockholm => {
             // the msa db is only used here, so it doesn't have an associated method on Args
@@ -57,7 +59,7 @@ pub fn build_hmm_from_stockholm(args: &Args) -> Result<()> {
         .arg(&args.query_hmm())
         .arg(&args.paths.query)
         .run()?;
-    
+
     Ok(())
 }
 
@@ -79,6 +81,6 @@ pub fn build_hmm_from_fasta(args: &Args) -> Result<()> {
         .arg(args.query_hmm())
         .arg(&args.paths.query)
         .run()?;
-    
+
     Ok(())
 }

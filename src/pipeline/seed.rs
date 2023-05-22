@@ -23,16 +23,10 @@ pub fn seed(args: &Args) -> anyhow::Result<(Vec<Profile>, SeedMap)> {
         .arg(&args.mmseqs_target_db())
         .arg(&args.mmseqs_prefilter_db())
         .args(["--threads", &args.threads.to_string()])
-        // -k INT                    k-mer length (0: automatically set to optimum) [0]
-        // .args(["-k", "7"])
-        // --k-score INT             k-mer threshold for generating similar k-mer lists [2147483647]
-        .args(["--k-score", "80"])
-        // --min-ungapped-score INT  Accept only matches with ungapped alignment score above
-        //                             threshold [15]
-        .args(["--min-ungapped-score", "15"])
-        // --max-seqs INT            Maximum results per query sequence allowed to pass the
-        //                             prefilter (affects sensitivity) [300]
-        .args(["--max-seqs", "1000"])
+        .args(["-k", &args.mmseqs_args.k.to_string()])
+        .args(["--k-score", &args.mmseqs_args.k_score.to_string()])
+        .args(["--min-ungapped-score", &args.mmseqs_args.min_ungapped_score.to_string()])
+        .args(["--max-seqs", &args.mmseqs_args.max_seqs.to_string()])
         .run()?;
 
     Command::new("mmseqs")
@@ -42,11 +36,7 @@ pub fn seed(args: &Args) -> anyhow::Result<(Vec<Profile>, SeedMap)> {
         .arg(&args.mmseqs_prefilter_db())
         .arg(&args.mmseqs_align_db())
         .args(["--threads", &args.threads.to_string()])
-        // -e DOUBLE      List matches below this E-value (range 0.0-inf) [1.000E-03]
-        .args(["-e", "1000.0"])
-        // --alt-ali INT  Show up to this many alternative alignments [0]
-        .args(["--alt-ali", "0"])
-        .args(["-a", "1"])
+        .args(["-e", &args.mmseqs_args.e.to_string()])
         .run()?;
 
     Command::new("mmseqs")
