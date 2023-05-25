@@ -213,6 +213,8 @@ impl Cli {
                 args.mmseqs_args.e = mmseqs_e;
 
                 args.command = MmoreCommand::Search;
+                args.build_hmm = true;
+
                 args.paths.query = PathBuf::from(query);
                 args.paths.target = PathBuf::from(target);
 
