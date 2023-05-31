@@ -19,10 +19,15 @@ pub struct PrepArgs {
     #[arg(value_name = "TARGET.fasta")]
     target_path: PathBuf,
     /// Where to place the prepared files
-    #[arg(long = "prep_dir", default_value = "./prep/")]
+    #[arg(short = 'p', long = "prep", default_value = "./prep/")]
     prep_dir_path: PathBuf,
     /// The number of threads to use
-    #[arg(short, long, default_value_t = 8usize, value_name = "n")]
+    #[arg(
+        short = 't',
+        long = "threads",
+        default_value_t = 8usize,
+        value_name = "n"
+    )]
     num_threads: usize,
     /// Don't build a profile HMM with the input MSA
     #[arg(long, action)]
@@ -170,7 +175,7 @@ pub fn build_hmm_from_stockholm(
     Command::new("hmmbuild")
         .args(["--cpu", &num_threads.to_string()])
         .arg(hmm_path.as_ref())
-        .args(stockholm_path.as_ref())
+        .arg(stockholm_path.as_ref())
         .run()?;
 
     Ok(())

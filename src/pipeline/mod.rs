@@ -6,5 +6,3 @@ mod search;
 pub use search::*;
 mod seed;
 pub use seed::*;
-mod multithread;
-pub use multithread::*;

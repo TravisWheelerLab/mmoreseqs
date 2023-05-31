@@ -34,9 +34,13 @@ pub struct MmseqsArgs {
     /// MMseqs2 prefilter: Maximum results per query sequence allowed to pass the prefilter
     #[arg(long = "mmseqs_max_seqs", default_value_t = 1000usize)]
     max_seqs: usize,
-    /// MMseqs2 align: Include matches below this E-value as seeds
-    #[arg(long = "mmseqs_e", default_value_t = 1000f64)]
-    e: f64,
+    /// MMseqs2 align: Include matches below this P-value as seeds.
+    ///
+    /// Note: the MMseqs2 align tool only allows thresholding by E-value, so the P-value supplied
+    /// here is multiplied by the size of the target database (i.e. number of sequences) to achieve
+    /// an E-value threshold that is effectively the same as the chosen P-value threshold.
+    #[arg(long = "mmseqs_pvalue_threshold", default_value_t = 0.01f64)]
+    pvalue_threshold: f64,
 }
 
 #[derive(Args)]
@@ -48,10 +52,15 @@ pub struct SeedArgs {
     #[arg(short, long, default_value = "seeds.json")]
     seeds_path: PathBuf,
     /// The path to a pre-built P7HMM file
-    #[arg(long = "query_hmm", value_name = "QUERY.hmm")]
+    #[arg(short = 'q', long = "query-hmm", value_name = "QUERY.hmm")]
     prebuilt_query_hmm_path: Option<PathBuf>,
     /// The number of threads to use
-    #[arg(short, long, default_value_t = 8usize, value_name = "n")]
+    #[arg(
+        short = 't',
+        long = "threads",
+        default_value_t = 8usize,
+        value_name = "n"
+    )]
     num_threads: usize,
     #[command(flatten)]
     mmseqs_args: MmseqsArgs,
@@ -79,6 +88,15 @@ pub fn seed(args: &SeedArgs) -> anyhow::Result<(Vec<Profile>, SeedMap)> {
         .args(["--max-seqs", &args.mmseqs_args.max_seqs.to_string()])
         .run()?;
 
+    // count the number of lines in the target database so we can compute
+    // the effective E-value that is equivalent to the chosen P-value
+    let target_db_file = BufReader::new(File::open(args.mmseqs_target_db_path())?);
+    let mut num_targets = 0.0;
+    for _ in target_db_file.lines() {
+        num_targets += 1.0;
+    }
+    let effective_e_value = args.mmseqs_args.pvalue_threshold * num_targets;
+
     Command::new("mmseqs")
         .arg("align")
         .arg(&args.mmseqs_query_db_path())
@@ -86,7 +104,7 @@ pub fn seed(args: &SeedArgs) -> anyhow::Result<(Vec<Profile>, SeedMap)> {
         .arg(&args.mmseqs_prefilter_db_path())
         .arg(&args.mmseqs_align_db_path())
         .args(["--threads", &args.num_threads.to_string()])
-        .args(["-e", &args.mmseqs_args.e.to_string()])
+        .args(["-e", &effective_e_value.to_string()])
         // the '-a' argument enables alignment backtraces in mmseqs2
         // it is required to get start positions for alignments
         .args(["-a", "1"])
