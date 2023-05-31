@@ -4,7 +4,6 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::sync::Mutex;
 
-use crate::args::Args;
 use crate::extension_traits::PathBufExt;
 use crate::pipeline::seed::SeedMap;
 
@@ -17,6 +16,7 @@ use nale::align::bounded::{
 };
 use nale::structs::{Alignment, Profile, Sequence, Trace};
 
+use crate::pipeline::align::AlignArgs;
 use nale::structs::alignment::ScoreParams;
 use rayon::prelude::*;
 use thread_local::ThreadLocal;
@@ -27,13 +27,12 @@ use thread_local::ThreadLocal;
 ///
 /// Mutex on single output file
 pub fn align_threaded_c(
-    args: &Args,
+    args: &AlignArgs,
     mut profiles: Vec<Profile>,
-    seed_map: SeedMap,
+    targets: Vec<Sequence>,
+    mut seed_map: SeedMap,
 ) -> anyhow::Result<()> {
-    let targets = Sequence::amino_from_fasta(&args.paths.target)?;
-
-    let results_writer: Mutex<BufWriter<File>> = Mutex::new(args.paths.results.open(true)?);
+    let results_writer: Mutex<BufWriter<File>> = Mutex::new(args.tsv_results_path.open(true)?);
 
     let score_params = ScoreParams::new(targets.len());
 

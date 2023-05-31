@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::sync::Mutex;
 
-use crate::args::Args;
 use crate::extension_traits::PathBufExt;
 use crate::pipeline::seed::SeedMap;
 
@@ -17,6 +16,7 @@ use nale::align::bounded::{
 use nale::structs::alignment::ScoreParams;
 use nale::structs::{Alignment, Profile, Sequence, Trace};
 
+use crate::pipeline::align::AlignArgs;
 use rayon::prelude::*;
 use thread_local::ThreadLocal;
 
@@ -26,12 +26,11 @@ use thread_local::ThreadLocal;
 ///
 /// Mutex on single output file
 pub fn align_threaded_e(
-    args: &Args,
+    args: &AlignArgs,
     mut profiles: Vec<Profile>,
-    seed_map: SeedMap,
+    targets: Vec<Sequence>,
+    mut seed_map: SeedMap,
 ) -> anyhow::Result<()> {
-    let targets = Sequence::amino_from_fasta(&args.paths.target)?;
-
     let mut dp = AlignmentStructs::default();
 
     let score_params = ScoreParams::new(targets.len());
@@ -163,8 +162,7 @@ pub fn align_threaded_e(
                             *cnt += 1;
 
                             RefCell::new(
-                                args.paths
-                                    .results
+                                args.tsv_results_path
                                     .with_extension(format!("{cnt}"))
                                     .open(true)
                                     .unwrap(),

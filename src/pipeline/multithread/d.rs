@@ -1,4 +1,3 @@
-use crate::args::Args;
 use crate::extension_traits::PathBufExt;
 use crate::pipeline::seed::SeedMap;
 use std::cell::RefCell;
@@ -17,6 +16,7 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::sync::Mutex;
 
+use crate::pipeline::align::AlignArgs;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use thread_local::ThreadLocal;
 
@@ -26,12 +26,11 @@ use thread_local::ThreadLocal;
 ///
 /// Mutex on single output file
 pub fn align_threaded_d(
-    args: &Args,
-    profiles: Vec<Profile>,
+    args: &AlignArgs,
+    mut profiles: Vec<Profile>,
+    targets: Vec<Sequence>,
     mut seed_map: SeedMap,
 ) -> anyhow::Result<()> {
-    let targets = Sequence::amino_from_fasta(&args.paths.target)?;
-
     let score_params = ScoreParams::new(targets.len());
 
     let mut target_map: HashMap<String, Sequence> = HashMap::new();
@@ -180,8 +179,7 @@ pub fn align_threaded_d(
                                 *cnt += 1;
 
                                 RefCell::new(
-                                    args.paths
-                                        .results
+                                    args.tsv_results_path
                                         .with_extension(format!("{cnt}"))
                                         .open(true)
                                         .unwrap(),

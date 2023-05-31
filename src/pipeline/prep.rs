@@ -1,44 +1,141 @@
-use crate::args::{Args, FileFormat};
+use crate::args::FileFormat;
 use crate::extension_traits::CommandExt;
-use anyhow::{Context, Result};
-use nale::structs::Sequence;
+
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
-pub fn prep(args: &Args) -> anyhow::Result<()> {
+use anyhow::{Context, Result};
+use clap::Args;
+use nale::structs::Sequence;
+
+#[derive(Args)]
+pub struct PrepArgs {
+    /// Query file
+    #[arg(value_name = "QUERY.[fasta:sto]")]
+    query_path: PathBuf,
+    /// Target file
+    #[arg(value_name = "TARGET.fasta")]
+    target_path: PathBuf,
+    /// Where to place the prepared files
+    #[arg(long = "prep_dir", default_value = "./prep/")]
+    prep_dir_path: PathBuf,
+    /// The number of threads to use
+    #[arg(short, long, default_value_t = 8usize, value_name = "n")]
+    num_threads: usize,
+    /// Don't build a profile HMM with the input MSA
+    #[arg(long, action)]
+    skip_hmmbuild: bool,
+    
+    // ----------
+    /// The format of the query file provided at the command line
+    #[clap(skip)]
+    query_format: FileFormat,
+}
+
+pub trait PrepPaths {
+    fn prep_dir_path(&self) -> &PathBuf;
+    /// Produce a path to the query P7 HMM file
+    fn prep_query_hmm_path(&self) -> PathBuf {
+        self.prep_dir_path().join("query.hmm")
+    }
+    /// Produce a path to the MMseqs2 MSA database.
+    ///
+    /// This is created if a stockholm file query is provided.
+    fn mmseqs_msa_db_path(&self) -> PathBuf {
+        self.prep_dir_path().join("msaDB")
+    }
+    /// Produce a path to the MMseqs2 query database.
+    ///
+    /// If a fasta target was provided, this will be a sequence database.
+    /// If a stockholm target was provided, this will be a profile database.
+    fn mmseqs_query_db_path(&self) -> PathBuf {
+        self.prep_dir_path().join("queryDB")
+    }
+    /// Produce a path to the MMseqs2 query database index
+    fn mmseqs_query_db_index_path(&self) -> PathBuf {
+        self.prep_dir_path().join("queryDB.index")
+    }
+    /// Produce a path to the MMseqs2 query database h file
+    fn mmseqs_query_db_h_path(&self) -> PathBuf {
+        self.prep_dir_path().join("queryDB_h")
+    }
+    /// Produce a path to the MMseqs2 query database h file index
+    fn mmseqs_query_db_h_index_path(&self) -> PathBuf {
+        self.prep_dir_path().join("queryDB_h.index")
+    }
+    /// Produce a path to the MMseqs2 target database.
+    ///
+    /// This will always be a sequence database.
+    fn mmseqs_target_db_path(&self) -> PathBuf {
+        self.prep_dir_path().join("targetDB")
+    }
+    /// Produce a path to the MMseqs2 prefilter database.
+    ///
+    /// This is the result of running `mmseqs prefilter` on the query and target databases.
+    fn mmseqs_prefilter_db_path(&self) -> PathBuf {
+        self.prep_dir_path().join("prefilterDB")
+    }
+    /// Produce a path to the MMseqs2 alignment database.
+    ///
+    /// This is the result of running `mmseqs align` on the query, target, and prefilter databases.
+    fn mmseqs_align_db_path(&self) -> PathBuf {
+        self.prep_dir_path().join("alignDB")
+    }
+    /// Produce a path to the MMseqs2 alignment output.
+    ///
+    /// This is the result of running `mmseqs convertalis` on the query, target, and align databases.
+    fn mmseqs_align_tsv_path(&self) -> PathBuf {
+        self.prep_dir_path().join("align.tsv")
+    }
+}
+
+impl PrepPaths for PrepArgs {
+    fn prep_dir_path(&self) -> &PathBuf {
+        &self.prep_dir_path
+    }
+}
+
+pub fn prep(args: &PrepArgs) -> anyhow::Result<()> {
     match args.query_format {
         FileFormat::Fasta => {
             Command::new("mmseqs")
                 .arg("createdb")
-                .arg(&args.paths.query)
-                .arg(args.mmseqs_query_db())
+                .arg(&args.query_path)
+                .arg(&args.mmseqs_query_db_path())
                 .run()?;
 
-            if args.build_hmm {
-                build_hmm_from_fasta(args)?;
+            if !args.skip_hmmbuild {
+                build_hmm_from_fasta(
+                    &args.query_path,
+                    &args.prep_query_hmm_path(),
+                    args.num_threads,
+                )?;
             }
         }
         FileFormat::Stockholm => {
-            // the msa db is only used here, so it doesn't have an associated method on Args
-            let msa_db_path = &args.paths.prep_dir.join("msaDB");
             Command::new("mmseqs")
                 .arg("convertmsa")
-                .arg(&args.paths.query)
-                .arg(msa_db_path)
+                .arg(&args.query_path)
+                .arg(&args.mmseqs_msa_db_path())
                 .run()?;
 
             Command::new("mmseqs")
                 .arg("msa2profile")
-                .arg(msa_db_path)
-                .arg(args.mmseqs_query_db())
-                .args(["--threads", &args.threads.to_string()])
+                .arg(&args.mmseqs_msa_db_path())
+                .arg(&args.mmseqs_query_db_path())
+                .args(["--threads", &args.num_threads.to_string()])
                 // --match-mode INT       0: Columns that have a residue in the first sequence are kept,
                 //                        1: columns that have a residue in --match-ratio of all sequences
                 //                           are kept [0]
                 .args(["--match-mode", "1"])
                 .run()?;
 
-            if args.build_hmm {
-                build_hmm_from_stockholm(args)?;
+            if !args.skip_hmmbuild {
+                build_hmm_from_stockholm(
+                    &args.query_path,
+                    &args.prep_query_hmm_path(),
+                    args.num_threads,
+                )?;
             }
         }
         _ => {
@@ -48,28 +145,39 @@ pub fn prep(args: &Args) -> anyhow::Result<()> {
 
     Command::new("mmseqs")
         .arg("createdb")
-        .arg(&args.paths.target)
-        .arg(&args.mmseqs_target_db())
+        .arg(&args.target_path)
+        .arg(&args.mmseqs_target_db_path())
         .run()?;
 
     Ok(())
 }
 
-pub fn build_hmm_from_stockholm(args: &Args) -> Result<()> {
+pub fn build_hmm_from_stockholm(
+    stockholm_path: &impl AsRef<Path>,
+    hmm_path: &impl AsRef<Path>,
+    num_threads: usize,
+) -> Result<()> {
     Command::new("hmmbuild")
-        .args(["--cpu", &args.threads.to_string()])
-        .arg(&args.query_hmm())
-        .arg(&args.paths.query)
+        .args(["--cpu", &num_threads.to_string()])
+        .arg(hmm_path.as_ref())
+        .args(stockholm_path.as_ref())
         .run()?;
 
     Ok(())
 }
 
-pub fn build_hmm_from_fasta(args: &Args) -> Result<()> {
-    let query_seq = Sequence::amino_from_fasta(&args.paths.query).with_context(|| {
+pub fn build_hmm_from_fasta(
+    fasta_path: &impl AsRef<Path>,
+    hmm_path: &impl AsRef<Path>,
+    num_threads: usize,
+) -> Result<()> {
+    let fasta_path = fasta_path.as_ref();
+    let hmm_path = hmm_path.as_ref();
+
+    let query_seq = Sequence::amino_from_fasta(fasta_path).with_context(|| {
         format!(
             "failed to parse query fasta: {}",
-            &args.paths.query.to_string_lossy()
+            fasta_path.to_string_lossy()
         )
     })?;
 
@@ -78,10 +186,10 @@ pub fn build_hmm_from_fasta(args: &Args) -> Result<()> {
     }
 
     Command::new("hmmbuild")
-        .args(["--cpu", &args.threads.to_string()])
+        .args(["--cpu", &num_threads.to_string()])
         .args(["-n", &query_seq[0].name])
-        .arg(args.query_hmm())
-        .arg(&args.paths.query)
+        .arg(hmm_path)
+        .arg(fasta_path)
         .run()?;
 
     Ok(())

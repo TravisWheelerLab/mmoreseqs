@@ -3,11 +3,11 @@ mod cli;
 mod extension_traits;
 mod pipeline;
 
-use args::MmoreCommand;
 use cli::Cli;
 use extension_traits::CommandExt;
 use pipeline::{align, prep, search, seed};
 
+use crate::cli::SubCommands;
 use anyhow::{Context, Result};
 use clap::Parser;
 
@@ -26,28 +26,22 @@ fn check_mmseqs_installed() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    let args = Cli::parse().args()?;
-
     check_hmmer_installed()?;
     check_mmseqs_installed()?;
 
-    match args.command {
-        MmoreCommand::Prep => {
-            prep(&args)?;
-        }
-        MmoreCommand::Seed => {
-            seed(&args)?;
-        }
-        MmoreCommand::Align => {
-            align(&args, None, None)?;
-        }
-        MmoreCommand::Search => {
+    match Cli::parse().command {
+        SubCommands::Search(args) => {
             search(&args)?;
         }
-        MmoreCommand::NotSet => {
-            unreachable!()
+        SubCommands::Prep(args) => {
+            prep(&args)?;
+        }
+        SubCommands::Seed(args) => {
+            seed(&args)?;
+        }
+        SubCommands::Align(args) => {
+            align(&args, None, None)?;
         }
     }
-
     Ok(())
 }

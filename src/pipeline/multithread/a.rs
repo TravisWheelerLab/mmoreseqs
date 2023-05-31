@@ -1,4 +1,3 @@
-use crate::args::Args;
 use crate::extension_traits::PathBufExt;
 use crate::pipeline::seed::SeedMap;
 
@@ -17,6 +16,7 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::sync::Mutex;
 
+use crate::pipeline::align::AlignArgs;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 /// Each thread gets a copy of all the profiles and a seed map
@@ -25,12 +25,11 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 ///
 /// Mutex on single output file
 pub fn align_threaded_a(
-    args: &Args,
+    args: &AlignArgs,
     profiles: Vec<Profile>,
+    targets: Vec<Sequence>,
     mut seed_map: SeedMap,
 ) -> anyhow::Result<()> {
-    let targets = Sequence::amino_from_fasta(&args.paths.target)?;
-
     let score_params = ScoreParams::new(targets.len());
 
     let mut target_map: HashMap<String, Sequence> = HashMap::new();
@@ -67,7 +66,7 @@ pub fn align_threaded_a(
         }
     }
 
-    let results_writer: Mutex<BufWriter<File>> = Mutex::new(args.paths.results.open(true)?);
+    let results_writer: Mutex<BufWriter<File>> = Mutex::new(args.tsv_results_path.open(true)?);
 
     thread_seed_maps.into_par_iter().for_each_with(
         (profiles, &target_map, score_params),

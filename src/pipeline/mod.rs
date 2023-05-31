@@ -1,10 +1,10 @@
 mod align;
-pub use align::align;
+pub use align::*;
 mod prep;
-pub use prep::prep;
+pub use prep::*;
 mod search;
-pub use search::search;
+pub use search::*;
 mod seed;
-pub use seed::seed;
+pub use seed::*;
 mod multithread;
 pub use multithread::*;

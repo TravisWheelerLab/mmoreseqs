@@ -1,8 +1,11 @@
+use crate::args::FileFormat;
 use crate::extension_traits::{CommandExt, PathBufExt};
+
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
+use std::path::PathBuf;
 use std::process::Command;
 
 use nale::align::bounded::structs::Seed;
@@ -10,19 +13,70 @@ use nale::align::needleman_wunsch::{needleman_wunsch, SimpleTraceStep};
 use nale::structs::hmm::parse_hmms_from_p7hmm_file;
 use nale::structs::{Profile, Sequence};
 
-use crate::args::{Args, FileFormat};
+use crate::pipeline::PrepPaths;
 use anyhow::Context;
+use clap::Args;
 use thiserror::Error;
 
 pub type SeedMap = HashMap<String, Vec<Seed>>;
 
-pub fn seed(args: &Args) -> anyhow::Result<(Vec<Profile>, SeedMap)> {
+#[derive(Args)]
+pub struct MmseqsArgs {
+    /// MMseqs2 prefilter: k-mer length (0: automatically set to optimum)
+    #[arg(long = "mmseqs_k", default_value_t = 0usize)]
+    k: usize,
+    /// MMseqs2 prefilter: k-mer threshold for generating similar k-mer lists
+    #[arg(long = "mmseqs_k_score", default_value_t = 80usize)]
+    k_score: usize,
+    /// MMseqs2 prefilter: Accept only matches with ungapped alignment score above threshold
+    #[arg(long = "mmseqs_min_ungapped_score", default_value_t = 15usize)]
+    min_ungapped_score: usize,
+    /// MMseqs2 prefilter: Maximum results per query sequence allowed to pass the prefilter
+    #[arg(long = "mmseqs_max_seqs", default_value_t = 1000usize)]
+    max_seqs: usize,
+    /// MMseqs2 align: Include matches below this E-value as seeds
+    #[arg(long = "mmseqs_e", default_value_t = 1000f64)]
+    e: f64,
+}
+
+#[derive(Args)]
+pub struct SeedArgs {
+    /// The location of files prepared with mmoreseqs prep
+    #[arg()]
+    prep_dir_path: PathBuf,
+    /// Where to place the seeds output file
+    #[arg(short, long, default_value = "seeds.json")]
+    seeds_path: PathBuf,
+    /// The path to a pre-built P7HMM file
+    #[arg(long = "query_hmm", value_name = "QUERY.hmm")]
+    prebuilt_query_hmm_path: Option<PathBuf>,
+    /// The number of threads to use
+    #[arg(short, long, default_value_t = 8usize, value_name = "n")]
+    num_threads: usize,
+    #[command(flatten)]
+    mmseqs_args: MmseqsArgs,
+
+    // ----------
+    /// The format of the query file that was used for seeding.
+    ///
+    /// In this case, the format should be determined from the MMseqs2 `queryDB.dbtype` file.
+    #[clap(skip)]
+    pub query_format: FileFormat,
+}
+
+impl PrepPaths for SeedArgs {
+    fn prep_dir_path(&self) -> &PathBuf {
+        &self.prep_dir_path
+    }
+}
+
+pub fn seed(args: &SeedArgs) -> anyhow::Result<(Vec<Profile>, SeedMap)> {
     Command::new("mmseqs")
         .arg("prefilter")
-        .arg(&args.mmseqs_query_db())
-        .arg(&args.mmseqs_target_db())
-        .arg(&args.mmseqs_prefilter_db())
-        .args(["--threads", &args.threads.to_string()])
+        .arg(&args.mmseqs_query_db_path())
+        .arg(&args.mmseqs_target_db_path())
+        .arg(&args.mmseqs_prefilter_db_path())
+        .args(["--threads", &args.num_threads.to_string()])
         .args(["-k", &args.mmseqs_args.k.to_string()])
         .args(["--k-score", &args.mmseqs_args.k_score.to_string()])
         .args([
@@ -34,42 +88,34 @@ pub fn seed(args: &Args) -> anyhow::Result<(Vec<Profile>, SeedMap)> {
 
     Command::new("mmseqs")
         .arg("align")
-        .arg(&args.mmseqs_query_db())
-        .arg(&args.mmseqs_target_db())
-        .arg(&args.mmseqs_prefilter_db())
-        .arg(&args.mmseqs_align_db())
-        .args(["--threads", &args.threads.to_string()])
+        .arg(&args.mmseqs_query_db_path())
+        .arg(&args.mmseqs_target_db_path())
+        .arg(&args.mmseqs_prefilter_db_path())
+        .arg(&args.mmseqs_align_db_path())
+        .args(["--threads", &args.num_threads.to_string()])
         .args(["-e", &args.mmseqs_args.e.to_string()])
-        // this argument is required to get start positions for alignments
+        // the '-a' argument enables alignment backtraces in mmseqs2
+        // it is required to get start positions for alignments
         .args(["-a", "1"])
         .run()?;
 
     Command::new("mmseqs")
         .arg("convertalis")
-        .arg(&args.mmseqs_query_db())
-        .arg(&args.mmseqs_target_db())
-        .arg(&args.mmseqs_align_db())
-        .arg(&args.mmseqs_align_tsv())
-        .args(["--threads", &args.threads.to_string()])
+        .arg(&args.mmseqs_query_db_path())
+        .arg(&args.mmseqs_target_db_path())
+        .arg(&args.mmseqs_align_db_path())
+        .arg(&args.mmseqs_align_tsv_path())
+        .args(["--threads", &args.num_threads.to_string()])
         .args([
             "--format-output",
             "query,target,qstart,qend,tstart,tend,evalue",
         ])
         .run()?;
 
-    // TODO: this is still not working quite right
-    // let hmms = match args.query_format {
-    //     FileFormat::Hmm => {
-    //         // TODO: fix this once the method signature is fixed
-    //         parse_hmms_from_p7hmm_file(args.paths.query.to_str().unwrap())?
-    //     }
-    //     _ => {
-    //         // TODO: fix this once the method signature is fixed
-    //         parse_hmms_from_p7hmm_file(args.query_hmm().to_str().unwrap())?
-    //     }
-    // };
-
-    let hmms = parse_hmms_from_p7hmm_file(args.query_hmm().to_str().unwrap())?;
+    let hmms = match &args.prebuilt_query_hmm_path {
+        Some(prebuilt_hmm_path) => parse_hmms_from_p7hmm_file(prebuilt_hmm_path)?,
+        _ => parse_hmms_from_p7hmm_file(args.prep_query_hmm_path())?,
+    };
 
     let p7_profiles: Vec<Profile> = hmms.iter().map(Profile::new).collect();
 
@@ -77,8 +123,7 @@ pub fn seed(args: &Args) -> anyhow::Result<(Vec<Profile>, SeedMap)> {
         build_alignment_seeds(&p7_profiles, args).context("failed to build alignment seeds")?;
 
     let mut seeds_out = args
-        .paths
-        .seeds
+        .seeds_path
         .open(true)
         .context("failed to create alignment seeds file")?;
 
@@ -94,7 +139,7 @@ pub fn seed(args: &Args) -> anyhow::Result<(Vec<Profile>, SeedMap)> {
 
 pub fn map_p7_to_mmseqs_profiles(
     p7_profiles: &[Profile],
-    args: &Args,
+    args: &SeedArgs,
 ) -> anyhow::Result<HashMap<String, Vec<usize>>> {
     let mmseqs_consensus_map = extract_mmseqs_profile_consensus_sequences(args)?;
 
@@ -138,13 +183,13 @@ pub fn map_p7_to_mmseqs_profiles(
 }
 
 pub fn extract_mmseqs_profile_consensus_sequences(
-    args: &Args,
+    args: &SeedArgs,
 ) -> anyhow::Result<HashMap<String, Sequence>> {
     let mut offsets_and_lengths: Vec<(usize, usize)> = vec![];
     let mut accession_numbers: Vec<String> = vec![];
 
-    let query_db_h_index_file =
-        File::open(&args.mmseqs_query_db_h_index()).context("failed to open queryDB_h.index")?;
+    let query_db_h_index_file = File::open(&args.mmseqs_query_db_h_index_path())
+        .context("failed to open queryDB_h.index")?;
 
     let reader = BufReader::new(query_db_h_index_file);
     for line in reader.lines() {
@@ -163,7 +208,7 @@ pub fn extract_mmseqs_profile_consensus_sequences(
     }
 
     let mut query_db_h_file =
-        File::open(&args.mmseqs_query_db_h()).context("failed to open queryDB_h")?;
+        File::open(&args.mmseqs_query_db_h_path()).context("failed to open queryDB_h")?;
 
     for (offset, length) in &offsets_and_lengths {
         let mut buffer = vec![0; *length];
@@ -191,7 +236,7 @@ pub fn extract_mmseqs_profile_consensus_sequences(
     }
 
     let query_db_index_file =
-        File::open(&args.mmseqs_query_db_index()).context("failed to open queryDB.index")?;
+        File::open(&args.mmseqs_query_db_index_path()).context("failed to open queryDB.index")?;
 
     let reader = BufReader::new(query_db_index_file);
     for line in reader.lines() {
@@ -213,7 +258,7 @@ pub fn extract_mmseqs_profile_consensus_sequences(
     let mut sequence_map: HashMap<String, Sequence> = HashMap::new();
 
     let mut query_db_file =
-        File::open(&args.mmseqs_query_db()).context("failed to open queryDB")?;
+        File::open(&args.mmseqs_query_db_path()).context("failed to open queryDB")?;
 
     for (seq_idx, (offset, length)) in offsets_and_lengths.iter().enumerate() {
         let mut buffer = vec![0; *length];
@@ -249,7 +294,16 @@ pub struct AccessionNotMappedError {
     accession: String,
 }
 
-pub fn build_alignment_seeds(p7_profiles: &Vec<Profile>, args: &Args) -> anyhow::Result<SeedMap> {
+#[derive(Error, Debug)]
+#[error("invalid query file format: {format}")]
+pub struct InvalidQueryFormatError {
+    format: FileFormat,
+}
+
+pub fn build_alignment_seeds(
+    p7_profiles: &Vec<Profile>,
+    args: &SeedArgs,
+) -> anyhow::Result<SeedMap> {
     let mut accession_to_name: HashMap<&str, &str> = HashMap::new();
 
     for profile in p7_profiles {
@@ -258,9 +312,9 @@ pub fn build_alignment_seeds(p7_profiles: &Vec<Profile>, args: &Args) -> anyhow:
 
     let mut seed_map: SeedMap = HashMap::new();
 
-    let mmseqs_align_file = File::open(&args.mmseqs_align_tsv()).context(format!(
+    let mmseqs_align_file = File::open(&args.mmseqs_align_tsv_path()).context(format!(
         "couldn't open mmseqs align file at: {}",
-        &args.mmseqs_align_tsv().to_string_lossy()
+        &args.mmseqs_align_tsv_path().to_string_lossy()
     ))?;
 
     let align_reader = BufReader::new(mmseqs_align_file);
@@ -275,8 +329,11 @@ pub fn build_alignment_seeds(p7_profiles: &Vec<Profile>, args: &Args) -> anyhow:
         FileFormat::Stockholm => {
             Some(map_p7_to_mmseqs_profiles(p7_profiles, args).context("failed to map profiles")?)
         }
-        _ => {
-            panic!()
+        ref format => {
+            return Err(InvalidQueryFormatError {
+                format: format.clone(),
+            }
+            .into())
         }
     };
 
