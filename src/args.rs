@@ -17,11 +17,10 @@ pub enum FileFormat {
 
 impl Display for FileFormat {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "FileFormat::")?;
         match self {
             FileFormat::Fasta => write!(f, "Fasta"),
             FileFormat::Stockholm => write!(f, "Stockholm"),
-            FileFormat::Hmm => write!(f, "Hmm"),
+            FileFormat::Hmm => write!(f, "HMM"),
             FileFormat::Unset => write!(f, "Unset"),
         }
     }
@@ -65,7 +64,7 @@ pub struct UnsupportedMmseqsDbError {
     code: u8,
 }
 
-pub fn get_query_format_from_mmseqs_query_db(
+pub fn read_query_format_from_mmseqs_query_db(
     query_db_path: &impl AsRef<Path>,
 ) -> anyhow::Result<FileFormat> {
     let mut file = File::open(query_db_path)?;

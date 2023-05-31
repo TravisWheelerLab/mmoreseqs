@@ -1,4 +1,4 @@
-use crate::args::FileFormat;
+use crate::args::{read_query_format_from_mmseqs_query_db, FileFormat};
 use crate::extension_traits::{CommandExt, PathBufExt};
 
 use std::collections::HashMap;
@@ -55,13 +55,6 @@ pub struct SeedArgs {
     num_threads: usize,
     #[command(flatten)]
     mmseqs_args: MmseqsArgs,
-
-    // ----------
-    /// The format of the query file that was used for seeding.
-    ///
-    /// In this case, the format should be determined from the MMseqs2 `queryDB.dbtype` file.
-    #[clap(skip)]
-    pub query_format: FileFormat,
 }
 
 impl PrepPaths for SeedArgs {
@@ -285,19 +278,20 @@ pub fn extract_mmseqs_profile_consensus_sequences(
 #[derive(Error, Debug)]
 #[error("no profile to profile map for: {profile_name}")]
 pub struct ProfilesNotMappedError {
-    profile_name: String,
+    pub profile_name: String,
 }
 
 #[derive(Error, Debug)]
 #[error("no profile name for accession: {accession}")]
 pub struct AccessionNotMappedError {
-    accession: String,
+    pub accession: String,
 }
 
+// TODO: move this elsewhere
 #[derive(Error, Debug)]
-#[error("invalid query file format: {format}")]
-pub struct InvalidQueryFormatError {
-    format: FileFormat,
+#[error("invalid file format: {format}")]
+pub struct InvalidFileFormatError {
+    pub format: FileFormat,
 }
 
 pub fn build_alignment_seeds(
@@ -319,7 +313,9 @@ pub fn build_alignment_seeds(
 
     let align_reader = BufReader::new(mmseqs_align_file);
 
-    let profile_to_profile_idx_maps_by_accession = match args.query_format {
+    let query_format = read_query_format_from_mmseqs_query_db(&args.mmseqs_query_dbtype_path())?;
+
+    let profile_to_profile_idx_maps_by_accession = match query_format {
         // if the query was a fasta, we don't need to map between
         // profiles (because we don't actually have profiles)
         FileFormat::Fasta => None,
@@ -330,7 +326,7 @@ pub fn build_alignment_seeds(
             Some(map_p7_to_mmseqs_profiles(p7_profiles, args).context("failed to map profiles")?)
         }
         ref format => {
-            return Err(InvalidQueryFormatError {
+            return Err(InvalidFileFormatError {
                 format: format.clone(),
             }
             .into())
@@ -345,7 +341,7 @@ pub fn build_alignment_seeds(
         let mut profile_start = line_tokens[2].parse::<usize>()?;
         let mut profile_end = line_tokens[3].parse::<usize>()?;
 
-        let profile_name = match args.query_format {
+        let profile_name = match query_format {
             FileFormat::Fasta => line_tokens[0].to_string(),
             FileFormat::Stockholm => {
                 let accession = line_tokens[0];

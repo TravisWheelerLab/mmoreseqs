@@ -1,9 +1,11 @@
-use crate::args::FileFormat;
+use crate::args::{guess_query_format_from_query_file, FileFormat};
 use crate::extension_traits::CommandExt;
+use std::fs::create_dir_all;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use crate::pipeline::InvalidFileFormatError;
 use anyhow::{Context, Result};
 use clap::Args;
 use nale::structs::Sequence;
@@ -25,11 +27,6 @@ pub struct PrepArgs {
     /// Don't build a profile HMM with the input MSA
     #[arg(long, action)]
     skip_hmmbuild: bool,
-    
-    // ----------
-    /// The format of the query file provided at the command line
-    #[clap(skip)]
-    query_format: FileFormat,
 }
 
 pub trait PrepPaths {
@@ -50,6 +47,12 @@ pub trait PrepPaths {
     /// If a stockholm target was provided, this will be a profile database.
     fn mmseqs_query_db_path(&self) -> PathBuf {
         self.prep_dir_path().join("queryDB")
+    }
+    /// Produce a path to the MMseqs2 query database dbtype file.
+    ///
+    /// This file holds a byte that describes the original query file format.
+    fn mmseqs_query_dbtype_path(&self) -> PathBuf {
+        self.prep_dir_path().join("queryDB.dbtype")
     }
     /// Produce a path to the MMseqs2 query database index
     fn mmseqs_query_db_index_path(&self) -> PathBuf {
@@ -95,8 +98,12 @@ impl PrepPaths for PrepArgs {
     }
 }
 
-pub fn prep(args: &PrepArgs) -> anyhow::Result<()> {
-    match args.query_format {
+pub fn prep(args: &PrepArgs) -> Result<()> {
+    let query_format = guess_query_format_from_query_file(&args.query_path)?;
+
+    create_dir_all(&args.prep_dir_path)?;
+
+    match query_format {
         FileFormat::Fasta => {
             Command::new("mmseqs")
                 .arg("createdb")
@@ -138,8 +145,11 @@ pub fn prep(args: &PrepArgs) -> anyhow::Result<()> {
                 )?;
             }
         }
-        _ => {
-            panic!()
+        ref format => {
+            return Err(InvalidFileFormatError {
+                format: format.clone(),
+            })
+            .context("invalid query file format in mmoreseqs prep")
         }
     }
 
