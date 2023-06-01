@@ -198,6 +198,11 @@ pub fn align_serial(
 
             profile.configure_for_target_length(target.length);
 
+            println!(
+                "profile fail: {} {} {:?}",
+                profile.name, profile.length, seed
+            );
+
             cloud_matrix.reuse(profile.length);
             forward_bounds.reuse(target.length, profile.length);
             backward_bounds.reuse(target.length, profile.length);
@@ -273,7 +278,7 @@ pub fn align_serial(
             let alignment = Alignment::from_trace(&trace, profile, target, &score_params);
 
             if alignment.evalue <= args.evalue_threshold {
-                writeln!(results_writer, "{}", alignment.tab_string());
+                writeln!(results_writer, "{}", alignment.tab_string())?;
             }
         }
     }
@@ -284,11 +289,11 @@ pub fn align_threaded(
     args: &AlignArgs,
     mut profiles: Vec<Profile>,
     targets: Vec<Sequence>,
-    mut seed_map: SeedMap,
+    seed_map: SeedMap,
 ) -> anyhow::Result<()> {
     let results_writer: Mutex<BufWriter<File>> = Mutex::new(args.tsv_results_path.open(true)?);
 
-    let mut dp = AlignmentStructs::default();
+    let dp = AlignmentStructs::default();
 
     let score_params = ScoreParams::new(targets.len());
 
