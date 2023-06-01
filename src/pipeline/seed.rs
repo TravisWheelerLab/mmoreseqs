@@ -20,40 +20,40 @@ use thiserror::Error;
 
 pub type SeedMap = HashMap<String, Vec<Seed>>;
 
-#[derive(Args)]
+#[derive(Args, Clone)]
 pub struct MmseqsArgs {
     /// MMseqs2 prefilter: k-mer length (0: automatically set to optimum)
     #[arg(long = "mmseqs_k", default_value_t = 0usize)]
-    k: usize,
+    pub k: usize,
     /// MMseqs2 prefilter: k-mer threshold for generating similar k-mer lists
     #[arg(long = "mmseqs_k_score", default_value_t = 80usize)]
-    k_score: usize,
+    pub k_score: usize,
     /// MMseqs2 prefilter: Accept only matches with ungapped alignment score above threshold
     #[arg(long = "mmseqs_min_ungapped_score", default_value_t = 15usize)]
-    min_ungapped_score: usize,
+    pub min_ungapped_score: usize,
     /// MMseqs2 prefilter: Maximum results per query sequence allowed to pass the prefilter
     #[arg(long = "mmseqs_max_seqs", default_value_t = 1000usize)]
-    max_seqs: usize,
+    pub max_seqs: usize,
     /// MMseqs2 align: Include matches below this P-value as seeds.
     ///
     /// Note: the MMseqs2 align tool only allows thresholding by E-value, so the P-value supplied
     /// here is multiplied by the size of the target database (i.e. number of sequences) to achieve
     /// an E-value threshold that is effectively the same as the chosen P-value threshold.
     #[arg(long = "mmseqs_pvalue_threshold", default_value_t = 0.01f64)]
-    pvalue_threshold: f64,
+    pub pvalue_threshold: f64,
 }
 
 #[derive(Args)]
 pub struct SeedArgs {
     /// The location of files prepared with mmoreseqs prep
     #[arg()]
-    prep_dir_path: PathBuf,
+    pub prep_dir_path: PathBuf,
     /// Where to place the seeds output file
     #[arg(short, long, default_value = "seeds.json")]
-    seeds_path: PathBuf,
+    pub seeds_path: PathBuf,
     /// The path to a pre-built P7HMM file
     #[arg(short = 'q', long = "query-hmm", value_name = "QUERY.hmm")]
-    prebuilt_query_hmm_path: Option<PathBuf>,
+    pub prebuilt_query_hmm_path: Option<PathBuf>,
     /// The number of threads to use
     #[arg(
         short = 't',
@@ -61,9 +61,9 @@ pub struct SeedArgs {
         default_value_t = 8usize,
         value_name = "n"
     )]
-    num_threads: usize,
+    pub num_threads: usize,
     #[command(flatten)]
-    mmseqs_args: MmseqsArgs,
+    pub mmseqs_args: MmseqsArgs,
 }
 
 impl PrepPaths for SeedArgs {

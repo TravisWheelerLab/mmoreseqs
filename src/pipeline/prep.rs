@@ -14,13 +14,13 @@ use nale::structs::Sequence;
 pub struct PrepArgs {
     /// Query file
     #[arg(value_name = "QUERY.[fasta:sto]")]
-    query_path: PathBuf,
+    pub query_path: PathBuf,
     /// Target file
     #[arg(value_name = "TARGET.fasta")]
-    target_path: PathBuf,
+    pub target_path: PathBuf,
     /// Where to place the prepared files
     #[arg(short = 'p', long = "prep", default_value = "./prep/")]
-    prep_dir_path: PathBuf,
+    pub prep_dir_path: PathBuf,
     /// The number of threads to use
     #[arg(
         short = 't',
@@ -28,10 +28,10 @@ pub struct PrepArgs {
         default_value_t = 8usize,
         value_name = "n"
     )]
-    num_threads: usize,
+    pub num_threads: usize,
     /// Don't build a profile HMM with the input MSA
     #[arg(long, action)]
-    skip_hmmbuild: bool,
+    pub skip_hmmbuild: bool,
 }
 
 pub trait PrepPaths {

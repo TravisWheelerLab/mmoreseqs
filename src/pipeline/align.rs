@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufWriter, Read, Write};
+use std::io::{stdout, BufWriter, Read, Write};
 use std::path::PathBuf;
 
 use crate::args::{guess_query_format_from_query_file, FileFormat};
@@ -178,7 +178,12 @@ pub fn align_serial(
     let mut optimal_matrix =
         DpMatrixSparse::new(max_target_length, max_profile_length, &RowBounds::default());
 
-    let mut results_writer = args.tsv_results_path.open(true)?;
+    let mut tab_results_writer = args.tsv_results_path.open(true)?;
+
+    let mut ali_results_writer: Box<dyn Write> = match args.ali_results_path {
+        Some(ref path) => Box::new(path.open(true)?),
+        None => Box::new(stdout()),
+    };
 
     for profile in profiles.iter_mut() {
         let seeds = match seed_map.get(&profile.name) {
@@ -197,11 +202,6 @@ pub fn align_serial(
                     })?;
 
             profile.configure_for_target_length(target.length);
-
-            println!(
-                "profile fail: {} {} {:?}",
-                profile.name, profile.length, seed
-            );
 
             cloud_matrix.reuse(profile.length);
             forward_bounds.reuse(target.length, profile.length);
@@ -278,7 +278,8 @@ pub fn align_serial(
             let alignment = Alignment::from_trace(&trace, profile, target, &score_params);
 
             if alignment.evalue <= args.evalue_threshold {
-                writeln!(results_writer, "{}", alignment.tab_string())?;
+                writeln!(ali_results_writer, "{}", alignment.ali_string())?;
+                writeln!(tab_results_writer, "{}", alignment.tab_string())?;
             }
         }
     }
@@ -291,7 +292,11 @@ pub fn align_threaded(
     targets: Vec<Sequence>,
     seed_map: SeedMap,
 ) -> anyhow::Result<()> {
-    let results_writer: Mutex<BufWriter<File>> = Mutex::new(args.tsv_results_path.open(true)?);
+    let tab_results_writer: Mutex<BufWriter<File>> = Mutex::new(args.tsv_results_path.open(true)?);
+    let ali_results_writer: Mutex<Box<dyn Write + Send>> = match args.ali_results_path {
+        Some(ref path) => Mutex::new(Box::new(path.open(true)?)),
+        None => Mutex::new(Box::new(stdout())),
+    };
 
     let dp = AlignmentStructs::default();
 
@@ -415,8 +420,19 @@ pub fn align_threaded(
                 let alignment = Alignment::from_trace(&trace, profile, target, score_params);
 
                 if alignment.evalue <= args.evalue_threshold {
-                    let mut writer = results_writer.lock().unwrap();
-                    writeln!(writer, "{}", alignment.tab_string());
+                    match tab_results_writer.lock() {
+                        Ok(mut writer) => writeln!(writer, "{}", alignment.tab_string())
+                            .expect("failed to write tabular output"),
+                        Err(_) => panic!("tabular results writer mutex was poisoned"),
+                    };
+
+                    match ali_results_writer.lock() {
+                        Ok(mut writer) => {
+                            writeln!(writer, "{}", alignment.ali_string())
+                                .expect("failed to write alignment output");
+                        }
+                        Err(_) => panic!("alignment results writer mutex was poisoned"),
+                    }
                 }
             }
         },
