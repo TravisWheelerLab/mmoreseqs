@@ -1,5 +1,17 @@
 use crate::pipeline::{AlignArgs, PrepArgs, SearchArgs, SeedArgs};
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
+
+#[derive(Args, Debug, Clone)]
+pub struct CommonArgs {
+    /// The number of threads to use
+    #[arg(
+        short = 't',
+        long = "threads",
+        default_value_t = 8usize,
+        value_name = "n"
+    )]
+    pub num_threads: usize,
+}
 
 #[derive(Subcommand)]
 pub enum SubCommands {

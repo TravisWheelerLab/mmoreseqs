@@ -19,6 +19,7 @@ use nale::structs::alignment::ScoreParams;
 use nale::structs::hmm::parse_hmms_from_p7hmm_file;
 use nale::structs::{Alignment, Profile, Sequence, Trace};
 
+use crate::cli::CommonArgs;
 use anyhow::Context;
 use clap::Args;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -37,6 +38,43 @@ pub struct TargetNotFoundError {
     target_name: String,
 }
 
+#[derive(Args, Debug, Clone)]
+pub struct NaleArgs {
+    /// Override the target database size (number of sequences) used for E-value calculation
+    #[arg(short = 'Z', value_name = "N")]
+    pub target_database_size: Option<usize>,
+    /// Pruning parameter alpha
+    #[arg(short = 'A', default_value_t = 12.0, value_name = "F")]
+    pub alpha: f32,
+    /// Pruning parameter beta
+    #[arg(short = 'B', default_value_t = 20.0, value_name = "F")]
+    pub beta: f32,
+    /// Pruning parameter gamma
+    #[arg(short = 'G', default_value_t = 5, value_name = "N")]
+    pub gamma: usize,
+    /// Compute the full dynamic programming matrices during alignment
+    #[arg(long, action)]
+    pub full_dp: bool,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct AlignOutputArgs {
+    /// Only report hits with an E-value below this value
+    #[arg(short = 'E', default_value_t = 10.0, value_name = "F")]
+    pub evalue_threshold: f64,
+    /// Where to place tabular output
+    #[arg(
+        short = 'T',
+        long = "tab-output",
+        default_value = "results.tsv",
+        value_name = "path"
+    )]
+    pub tsv_results_path: PathBuf,
+    /// Where to place alignment output
+    #[arg(short = 'O', long = "output", value_name = "path")]
+    pub ali_results_path: Option<PathBuf>,
+}
+
 #[derive(Debug, Args)]
 pub struct AlignArgs {
     /// Query file
@@ -48,23 +86,18 @@ pub struct AlignArgs {
     /// Alignment seeds from running mmoreseqs seed (or elsewhere)
     #[arg(value_name = "SEEDS.json")]
     pub seeds_path: PathBuf,
-    /// Only report hits with an E-value below this value
-    #[arg(short = 'E', default_value_t = 10.0)]
-    pub evalue_threshold: f64,
-    /// Where to place tabular output
-    #[arg(short = 'T', long = "tab_output", default_value = "results.tsv")]
-    pub tsv_results_path: PathBuf,
-    /// Where to place alignment output
-    #[arg(short = 'O', long = "output")]
-    pub ali_results_path: Option<PathBuf>,
-    /// The number of threads to use
-    #[arg(
-        short = 't',
-        long = "threads",
-        default_value_t = 8usize,
-        value_name = "n"
-    )]
-    pub num_threads: usize,
+
+    /// Arguments that are passed to nale functions
+    #[command(flatten)]
+    pub nale_args: NaleArgs,
+
+    /// Arguments that control output options
+    #[command(flatten)]
+    pub output_args: AlignOutputArgs,
+
+    /// Arguments that are common across all mmoreseqs subcommands
+    #[command(flatten)]
+    pub common_args: CommonArgs,
 }
 
 pub fn align(
@@ -72,6 +105,10 @@ pub fn align(
     profiles: Option<Vec<Profile>>,
     seed_map: Option<SeedMap>,
 ) -> anyhow::Result<()> {
+    if args.nale_args.full_dp {
+        panic!("full DP option not implemented");
+    }
+
     let profiles = match profiles {
         // if we happened to run the seed step before
         // this, the profiles will be passed in
@@ -81,12 +118,20 @@ pub fn align(
             let hmm_path = match query_format {
                 FileFormat::Fasta => {
                     let hmm_path = args.query_path.with_extension("hmm");
-                    build_hmm_from_fasta(&args.query_path, &hmm_path, args.num_threads)?;
+                    build_hmm_from_fasta(
+                        &args.query_path,
+                        &hmm_path,
+                        args.common_args.num_threads,
+                    )?;
                     hmm_path
                 }
                 FileFormat::Stockholm => {
                     let hmm_path = args.query_path.with_extension("hmm");
-                    build_hmm_from_stockholm(&args.query_path, &hmm_path, args.num_threads)?;
+                    build_hmm_from_stockholm(
+                        &args.query_path,
+                        &hmm_path,
+                        args.common_args.num_threads,
+                    )?;
                     hmm_path
                 }
                 FileFormat::Hmm => args.query_path.clone(),
@@ -128,12 +173,12 @@ pub fn align(
 
     let targets = Sequence::amino_from_fasta(&args.target_path)?;
 
-    if args.num_threads == 1 {
+    if args.common_args.num_threads == 1 {
         align_serial(args, profiles, targets, seed_map)?;
     } else {
         // this is how we tell rayon how many threads to use
         rayon::ThreadPoolBuilder::new()
-            .num_threads(args.num_threads)
+            .num_threads(args.common_args.num_threads)
             .build_global()
             .unwrap();
 
@@ -149,6 +194,12 @@ pub fn align_serial(
     targets: Vec<Sequence>,
     seed_map: SeedMap,
 ) -> anyhow::Result<()> {
+    let cloud_search_params = CloudSearchParams {
+        gamma: args.nale_args.gamma,
+        alpha: args.nale_args.alpha,
+        beta: args.nale_args.beta,
+    };
+
     let mut score_params = ScoreParams::new(targets.len());
 
     let mut target_map: HashMap<String, Sequence> = HashMap::new();
@@ -178,9 +229,9 @@ pub fn align_serial(
     let mut optimal_matrix =
         DpMatrixSparse::new(max_target_length, max_profile_length, &RowBounds::default());
 
-    let mut tab_results_writer = args.tsv_results_path.open(true)?;
+    let mut tab_results_writer = args.output_args.tsv_results_path.open(true)?;
 
-    let mut ali_results_writer: Box<dyn Write> = match args.ali_results_path {
+    let mut ali_results_writer: Box<dyn Write> = match args.output_args.ali_results_path {
         Some(ref path) => Box::new(path.open(true)?),
         None => Box::new(stdout()),
     };
@@ -212,7 +263,7 @@ pub fn align_serial(
                 target,
                 seed,
                 &mut cloud_matrix,
-                &CloudSearchParams::default(),
+                &cloud_search_params,
                 &mut forward_bounds,
             );
 
@@ -221,7 +272,7 @@ pub fn align_serial(
                 target,
                 seed,
                 &mut cloud_matrix,
-                &CloudSearchParams::default(),
+                &cloud_search_params,
                 &mut backward_bounds,
             );
 
@@ -277,7 +328,7 @@ pub fn align_serial(
 
             let alignment = Alignment::from_trace(&trace, profile, target, &score_params);
 
-            if alignment.evalue <= args.evalue_threshold {
+            if alignment.evalue <= args.output_args.evalue_threshold {
                 writeln!(ali_results_writer, "{}", alignment.ali_string())?;
                 writeln!(tab_results_writer, "{}", alignment.tab_string())?;
             }
@@ -292,8 +343,9 @@ pub fn align_threaded(
     targets: Vec<Sequence>,
     seed_map: SeedMap,
 ) -> anyhow::Result<()> {
-    let tab_results_writer: Mutex<BufWriter<File>> = Mutex::new(args.tsv_results_path.open(true)?);
-    let ali_results_writer: Mutex<Box<dyn Write + Send>> = match args.ali_results_path {
+    let tab_results_writer: Mutex<BufWriter<File>> =
+        Mutex::new(args.output_args.tsv_results_path.open(true)?);
+    let ali_results_writer: Mutex<Box<dyn Write + Send>> = match args.output_args.ali_results_path {
         Some(ref path) => Mutex::new(Box::new(path.open(true)?)),
         None => Mutex::new(Box::new(stdout())),
     };
@@ -301,6 +353,12 @@ pub fn align_threaded(
     let dp = AlignmentStructs::default();
 
     let score_params = ScoreParams::new(targets.len());
+
+    let cloud_search_params = CloudSearchParams {
+        gamma: args.nale_args.gamma,
+        alpha: args.nale_args.alpha,
+        beta: args.nale_args.beta,
+    };
 
     let mut target_map: HashMap<String, Sequence> = HashMap::new();
     for target in targets {
@@ -345,7 +403,7 @@ pub fn align_threaded(
                     target,
                     seed,
                     &mut dp.cloud_matrix,
-                    &CloudSearchParams::default(),
+                    &cloud_search_params,
                     &mut dp.forward_bounds,
                 );
 
@@ -354,7 +412,7 @@ pub fn align_threaded(
                     target,
                     seed,
                     &mut dp.cloud_matrix,
-                    &CloudSearchParams::default(),
+                    &cloud_search_params,
                     &mut dp.backward_bounds,
                 );
 
@@ -419,7 +477,7 @@ pub fn align_threaded(
 
                 let alignment = Alignment::from_trace(&trace, profile, target, score_params);
 
-                if alignment.evalue <= args.evalue_threshold {
+                if alignment.evalue <= args.output_args.evalue_threshold {
                     match tab_results_writer.lock() {
                         Ok(mut writer) => writeln!(writer, "{}", alignment.tab_string())
                             .expect("failed to write tabular output"),

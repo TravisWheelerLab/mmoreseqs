@@ -1,6 +1,10 @@
 use crate::args::{read_query_format_from_mmseqs_query_db, FileFormat};
 use crate::extension_traits::{CommandExt, PathBufExt};
 
+use nale::align::bounded::structs::Seed;
+use nale::align::needleman_wunsch::{needleman_wunsch, SimpleTraceStep};
+use nale::structs::hmm::parse_hmms_from_p7hmm_file;
+use nale::structs::{Profile, Sequence};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
@@ -8,19 +12,15 @@ use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::PathBuf;
 use std::process::Command;
 
-use nale::align::bounded::structs::Seed;
-use nale::align::needleman_wunsch::{needleman_wunsch, SimpleTraceStep};
-use nale::structs::hmm::parse_hmms_from_p7hmm_file;
-use nale::structs::{Profile, Sequence};
-
-use crate::pipeline::PrepPaths;
+use crate::cli::CommonArgs;
+use crate::pipeline::PrepDirArgs;
 use anyhow::Context;
 use clap::Args;
 use thiserror::Error;
 
 pub type SeedMap = HashMap<String, Vec<Seed>>;
 
-#[derive(Args, Clone)]
+#[derive(Args, Debug, Clone)]
 pub struct MmseqsArgs {
     /// MMseqs2 prefilter: k-mer length (0: automatically set to optimum)
     #[arg(long = "mmseqs_k", default_value_t = 0usize)]
@@ -43,10 +43,13 @@ pub struct MmseqsArgs {
     pub pvalue_threshold: f64,
 }
 
-#[derive(Args)]
+#[derive(Args, Debug, Clone)]
 pub struct SeedArgs {
     /// The location of files prepared with mmoreseqs prep
-    #[arg()]
+    // NOTE: this arg is here so that prep_dir_path can be a positional argument.
+    //       the value assigned to prep_dir_path needs to be turned into a
+    //       PrepDirArgs struct before the seed function can be run
+    #[arg(value_name = "PATH")]
     pub prep_dir_path: PathBuf,
     /// Where to place the seeds output file
     #[arg(short, long, default_value = "seeds.json")]
@@ -54,31 +57,28 @@ pub struct SeedArgs {
     /// The path to a pre-built P7HMM file
     #[arg(short = 'q', long = "query-hmm", value_name = "QUERY.hmm")]
     pub prebuilt_query_hmm_path: Option<PathBuf>,
-    /// The number of threads to use
-    #[arg(
-        short = 't',
-        long = "threads",
-        default_value_t = 8usize,
-        value_name = "n"
-    )]
-    pub num_threads: usize,
+
+    /// Provides paths to the prep dir and the files placed in it
+    // TODO: error if this is not properly initialized
+    #[clap(skip)]
+    pub prep_dir: PrepDirArgs,
+
+    /// Arguments that are passed to MMseqs2
     #[command(flatten)]
     pub mmseqs_args: MmseqsArgs,
-}
 
-impl PrepPaths for SeedArgs {
-    fn prep_dir_path(&self) -> &PathBuf {
-        &self.prep_dir_path
-    }
+    /// Arguments that are common across all mmoreseqs subcommands
+    #[command(flatten)]
+    pub common_args: CommonArgs,
 }
 
 pub fn seed(args: &SeedArgs) -> anyhow::Result<(Vec<Profile>, SeedMap)> {
     Command::new("mmseqs")
         .arg("prefilter")
-        .arg(&args.mmseqs_query_db_path())
-        .arg(&args.mmseqs_target_db_path())
-        .arg(&args.mmseqs_prefilter_db_path())
-        .args(["--threads", &args.num_threads.to_string()])
+        .arg(&args.prep_dir.mmseqs_query_db_path())
+        .arg(&args.prep_dir.mmseqs_target_db_path())
+        .arg(&args.prep_dir.mmseqs_prefilter_db_path())
+        .args(["--threads", &args.common_args.num_threads.to_string()])
         .args(["-k", &args.mmseqs_args.k.to_string()])
         .args(["--k-score", &args.mmseqs_args.k_score.to_string()])
         .args([
@@ -90,7 +90,7 @@ pub fn seed(args: &SeedArgs) -> anyhow::Result<(Vec<Profile>, SeedMap)> {
 
     // count the number of lines in the target database so we can compute
     // the effective E-value that is equivalent to the chosen P-value
-    let target_db_file = BufReader::new(File::open(args.mmseqs_target_db_path())?);
+    let target_db_file = BufReader::new(File::open(args.prep_dir.mmseqs_target_db_path())?);
     let mut num_targets = 0.0;
     for _ in target_db_file.lines() {
         num_targets += 1.0;
@@ -99,11 +99,11 @@ pub fn seed(args: &SeedArgs) -> anyhow::Result<(Vec<Profile>, SeedMap)> {
 
     Command::new("mmseqs")
         .arg("align")
-        .arg(&args.mmseqs_query_db_path())
-        .arg(&args.mmseqs_target_db_path())
-        .arg(&args.mmseqs_prefilter_db_path())
-        .arg(&args.mmseqs_align_db_path())
-        .args(["--threads", &args.num_threads.to_string()])
+        .arg(&args.prep_dir.mmseqs_query_db_path())
+        .arg(&args.prep_dir.mmseqs_target_db_path())
+        .arg(&args.prep_dir.mmseqs_prefilter_db_path())
+        .arg(&args.prep_dir.mmseqs_align_db_path())
+        .args(["--threads", &args.common_args.num_threads.to_string()])
         .args(["-e", &effective_e_value.to_string()])
         // the '-a' argument enables alignment backtraces in mmseqs2
         // it is required to get start positions for alignments
@@ -112,11 +112,11 @@ pub fn seed(args: &SeedArgs) -> anyhow::Result<(Vec<Profile>, SeedMap)> {
 
     Command::new("mmseqs")
         .arg("convertalis")
-        .arg(&args.mmseqs_query_db_path())
-        .arg(&args.mmseqs_target_db_path())
-        .arg(&args.mmseqs_align_db_path())
-        .arg(&args.mmseqs_align_tsv_path())
-        .args(["--threads", &args.num_threads.to_string()])
+        .arg(&args.prep_dir.mmseqs_query_db_path())
+        .arg(&args.prep_dir.mmseqs_target_db_path())
+        .arg(&args.prep_dir.mmseqs_align_db_path())
+        .arg(&args.prep_dir.mmseqs_align_tsv_path())
+        .args(["--threads", &args.common_args.num_threads.to_string()])
         .args([
             "--format-output",
             "query,target,qstart,qend,tstart,tend,evalue",
@@ -125,7 +125,7 @@ pub fn seed(args: &SeedArgs) -> anyhow::Result<(Vec<Profile>, SeedMap)> {
 
     let hmms = match &args.prebuilt_query_hmm_path {
         Some(prebuilt_hmm_path) => parse_hmms_from_p7hmm_file(prebuilt_hmm_path)?,
-        _ => parse_hmms_from_p7hmm_file(args.prep_query_hmm_path())?,
+        _ => parse_hmms_from_p7hmm_file(args.prep_dir.prep_query_hmm_path())?,
     };
 
     let p7_profiles: Vec<Profile> = hmms.iter().map(Profile::new).collect();
@@ -199,7 +199,12 @@ pub fn extract_mmseqs_profile_consensus_sequences(
     let mut offsets_and_lengths: Vec<(usize, usize)> = vec![];
     let mut accession_numbers: Vec<String> = vec![];
 
-    let query_db_h_index_file = File::open(&args.mmseqs_query_db_h_index_path())
+    // query_db_h_index -> offsets & lengths of query names
+    // query_db_h       -> query names
+    // query_db_index   -> offsets & lengths of binary profiles
+    // query_db         -> binary profiles (lines of 23 or 25, depending on mmseqs version)
+
+    let query_db_h_index_file = File::open(&args.prep_dir.mmseqs_query_db_h_index_path())
         .context("failed to open queryDB_h.index")?;
 
     let reader = BufReader::new(query_db_h_index_file);
@@ -219,7 +224,7 @@ pub fn extract_mmseqs_profile_consensus_sequences(
     }
 
     let mut query_db_h_file =
-        File::open(&args.mmseqs_query_db_h_path()).context("failed to open queryDB_h")?;
+        File::open(&args.prep_dir.mmseqs_query_db_h_path()).context("failed to open queryDB_h")?;
 
     for (offset, length) in &offsets_and_lengths {
         let mut buffer = vec![0; *length];
@@ -246,8 +251,8 @@ pub fn extract_mmseqs_profile_consensus_sequences(
         }
     }
 
-    let query_db_index_file =
-        File::open(&args.mmseqs_query_db_index_path()).context("failed to open queryDB.index")?;
+    let query_db_index_file = File::open(&args.prep_dir.mmseqs_query_db_index_path())
+        .context("failed to open queryDB.index")?;
 
     let reader = BufReader::new(query_db_index_file);
     for line in reader.lines() {
@@ -269,7 +274,7 @@ pub fn extract_mmseqs_profile_consensus_sequences(
     let mut sequence_map: HashMap<String, Sequence> = HashMap::new();
 
     let mut query_db_file =
-        File::open(&args.mmseqs_query_db_path()).context("failed to open queryDB")?;
+        File::open(&args.prep_dir.mmseqs_query_db_path()).context("failed to open queryDB")?;
 
     for (seq_idx, (offset, length)) in offsets_and_lengths.iter().enumerate() {
         let mut buffer = vec![0; *length];
@@ -278,8 +283,8 @@ pub fn extract_mmseqs_profile_consensus_sequences(
 
         let mut consensus_digital_bytes: Vec<u8> = vec![];
 
-        for byte_chunk in buffer.chunks(23) {
-            if byte_chunk.len() == 23 {
+        for byte_chunk in buffer.chunks(25) {
+            if byte_chunk.len() == 25 {
                 consensus_digital_bytes.push(byte_chunk[21]);
             }
         }
@@ -324,14 +329,15 @@ pub fn build_alignment_seeds(
 
     let mut seed_map: SeedMap = HashMap::new();
 
-    let mmseqs_align_file = File::open(&args.mmseqs_align_tsv_path()).context(format!(
+    let mmseqs_align_file = File::open(&args.prep_dir.mmseqs_align_tsv_path()).context(format!(
         "couldn't open mmseqs align file at: {}",
-        &args.mmseqs_align_tsv_path().to_string_lossy()
+        &args.prep_dir.mmseqs_align_tsv_path().to_string_lossy()
     ))?;
 
     let align_reader = BufReader::new(mmseqs_align_file);
 
-    let query_format = read_query_format_from_mmseqs_query_db(&args.mmseqs_query_dbtype_path())?;
+    let query_format =
+        read_query_format_from_mmseqs_query_db(&args.prep_dir.mmseqs_query_dbtype_path())?;
 
     let profile_to_profile_idx_maps_by_accession = match query_format {
         // if the query was a fasta, we don't need to map between

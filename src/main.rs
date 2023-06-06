@@ -36,7 +36,10 @@ fn main() -> Result<()> {
         SubCommands::Prep(args) => {
             prep(&args)?;
         }
-        SubCommands::Seed(args) => {
+        SubCommands::Seed(mut args) => {
+            // TODO: I'd like to think of a way to remove this nonsense
+            args.prep_dir.path = args.prep_dir_path.clone();
+
             seed(&args)?;
         }
         SubCommands::Align(args) => {
